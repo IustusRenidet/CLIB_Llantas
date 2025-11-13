@@ -165,6 +165,31 @@
 
     <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true"></div>
 
+    <div
+      id="modal-confirmacion"
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="modal-confirmacion-titulo"
+      hidden
+    >
+      <div class="modal__overlay" data-modal-cancelar></div>
+      <div class="modal__dialog" role="document">
+        <p id="modal-confirmacion-titulo" class="modal__titulo">clib_llantas</p>
+        <p id="modal-confirmacion-mensaje" class="modal__mensaje">
+          Tienes cambios sin guardar. Si continúas, no se aplicarán.
+        </p>
+        <div class="modal__acciones">
+          <button type="button" class="boton-secundario modal__boton" data-modal-cancelar>
+            Cancelar
+          </button>
+          <button type="button" class="boton-primario modal__boton" data-modal-aceptar>
+            Aceptar
+          </button>
+        </div>
+      </div>
+    </div>
+
     <script src="/app.js" type="module"></script>
   </body>
 </html>

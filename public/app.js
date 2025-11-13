@@ -21,11 +21,16 @@ const elementos = {
   panelDetalle: document.getElementById('panel-detalle'),
   tabDetalle: document.querySelector('[data-tab-target="detalle"]'),
   botonVolver: document.getElementById('boton-volver'),
-  toastContainer: document.getElementById('toast-container')
+  toastContainer: document.getElementById('toast-container'),
+  modalConfirmacion: document.getElementById('modal-confirmacion'),
+  modalConfirmacionMensaje: document.getElementById('modal-confirmacion-mensaje'),
+  modalConfirmacionAceptar: document.querySelector('[data-modal-aceptar]'),
+  modalConfirmacionCancelar: document.querySelector('[data-modal-cancelar]')
 };
 
 const CAMPOS_LIBRES = Array.from({ length: 11 }, (_, indice) => `CAMPLIB${indice + 1}`);
 const EMPRESA_FIJA = '1';
+const MENSAJE_CAMBIOS_PENDIENTES = 'Tienes cambios sin guardar. Si continúas, no se aplicarán.';
 
 const plantillas = {
   resultado: document.getElementById('fila-resultado'),
@@ -38,6 +43,10 @@ let cambiosPendientes = false;
 let temporizadorGuardado = null;
 let temporizadorBusqueda = null;
 let camposPartidasDisponibles = false;
+let resolverModalConfirmacion = null;
+let ultimoElementoEnfoque = null;
+let temporizadorOcultarModal = null;
+let promesaModalActiva = null;
 
 async function cargarTiposDocumento() {
   const respuesta = await fetch('/api/tipos-documento');
@@ -59,7 +68,8 @@ async function buscarDocumentos() {
   if (!elementos.tipoDocumento) {
     return;
   }
-  if (!confirmarSalidaDeCambios()) {
+  const puedeContinuar = await confirmarSalidaDeCambios();
+  if (!puedeContinuar) {
     return;
   }
   cambiosPendientes = false;
@@ -119,14 +129,15 @@ function programarBusqueda() {
   }, 350);
 }
 
-function seleccionarDocumento(registro) {
+async function seleccionarDocumento(registro) {
   if (!registro) {
     return;
   }
-  if (!confirmarSalidaDeCambios()) {
+  const puedeContinuar = await confirmarSalidaDeCambios();
+  if (!puedeContinuar) {
     return;
   }
-  cargarDocumento(registro);
+  await cargarDocumento(registro);
 }
 
 async function cargarDocumento(registro) {
@@ -359,8 +370,9 @@ function inicializarTabs() {
   habilitarTabDetalle(false);
 }
 
-function volverAPanelBusqueda() {
-  if (!confirmarSalidaDeCambios()) {
+async function volverAPanelBusqueda() {
+  const puedeContinuar = await confirmarSalidaDeCambios();
+  if (!puedeContinuar) {
     return;
   }
   documentoSeleccionado = null;
@@ -370,11 +382,91 @@ function volverAPanelBusqueda() {
   desactivarVistaDetalle();
 }
 
-function confirmarSalidaDeCambios() {
+async function confirmarSalidaDeCambios() {
   if (!cambiosPendientes) {
     return true;
   }
-  return window.confirm('Tienes cambios sin guardar. Si continúas, no se aplicarán.');
+  if (!elementos.modalConfirmacion) {
+    return window.confirm(MENSAJE_CAMBIOS_PENDIENTES);
+  }
+  return abrirModalConfirmacion(MENSAJE_CAMBIOS_PENDIENTES);
+}
+
+function abrirModalConfirmacion(mensaje) {
+  if (!elementos.modalConfirmacion) {
+    return Promise.resolve(true);
+  }
+  clearTimeout(temporizadorOcultarModal);
+  if (elementos.modalConfirmacionMensaje) {
+    elementos.modalConfirmacionMensaje.textContent = mensaje;
+  }
+  elementos.modalConfirmacion.hidden = false;
+  requestAnimationFrame(() => {
+    elementos.modalConfirmacion.classList.add('modal--visible');
+  });
+  ultimoElementoEnfoque = document.activeElement;
+  if (elementos.modalConfirmacionAceptar) {
+    elementos.modalConfirmacionAceptar.focus();
+  }
+  if (promesaModalActiva) {
+    return promesaModalActiva;
+  }
+  promesaModalActiva = new Promise((resolve) => {
+    resolverModalConfirmacion = (decision) => {
+      resolve(decision);
+      resolverModalConfirmacion = null;
+      promesaModalActiva = null;
+    };
+  });
+  return promesaModalActiva;
+}
+
+function cerrarModalConfirmacion(decision) {
+  if (!elementos.modalConfirmacion) {
+    if (typeof resolverModalConfirmacion === 'function') {
+      resolverModalConfirmacion(decision);
+      resolverModalConfirmacion = null;
+    }
+    return;
+  }
+  elementos.modalConfirmacion.classList.remove('modal--visible');
+  temporizadorOcultarModal = setTimeout(() => {
+    elementos.modalConfirmacion.hidden = true;
+    temporizadorOcultarModal = null;
+  }, 200);
+  if (typeof resolverModalConfirmacion === 'function') {
+    resolverModalConfirmacion(decision);
+    resolverModalConfirmacion = null;
+  }
+  if (ultimoElementoEnfoque && typeof ultimoElementoEnfoque.focus === 'function') {
+    ultimoElementoEnfoque.focus({ preventScroll: true });
+  }
+  ultimoElementoEnfoque = null;
+}
+
+function prepararModalConfirmacion() {
+  if (!elementos.modalConfirmacion) {
+    return;
+  }
+  const accionesCancelar = elementos.modalConfirmacion.querySelectorAll('[data-modal-cancelar]');
+  accionesCancelar.forEach((elemento) => {
+    elemento.addEventListener('click', (evento) => {
+      evento.preventDefault();
+      cerrarModalConfirmacion(false);
+    });
+  });
+  if (elementos.modalConfirmacionAceptar) {
+    elementos.modalConfirmacionAceptar.addEventListener('click', (evento) => {
+      evento.preventDefault();
+      cerrarModalConfirmacion(true);
+    });
+  }
+  document.addEventListener('keydown', (evento) => {
+    if (evento.key === 'Escape' && elementos.modalConfirmacion.classList.contains('modal--visible')) {
+      evento.preventDefault();
+      cerrarModalConfirmacion(false);
+    }
+  });
 }
 
 function ocultarFormularioCampos() {
@@ -587,6 +679,7 @@ if (elementos.botonVolver) {
 }
 
 inicializarTabs();
+prepararModalConfirmacion();
 
 window.addEventListener('beforeunload', (evento) => {
   if (!cambiosPendientes) {
