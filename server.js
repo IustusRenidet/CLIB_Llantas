@@ -4,15 +4,78 @@ const fs = require('fs');
 const firebird = require('node-firebird');
 
 const TIPOS_DOCUMENTO = {
-  F: { clave: 'F', descripcion: 'Factura', tabla: 'FACTF', tablaClib: 'FACTF_CLIB', tablaPartidas: 'PAR_FACTF' },
-  P: { clave: 'P', descripcion: 'Pedido', tabla: 'FACTP', tablaClib: 'FACTP_CLIB', tablaPartidas: 'PAR_FACTP' },
-  C: { clave: 'C', descripcion: 'Cotización', tabla: 'FACTC', tablaClib: 'FACTC_CLIB', tablaPartidas: 'PAR_FACTC' },
-  R: { clave: 'R', descripcion: 'Remisión', tabla: 'FACTR', tablaClib: 'FACTR_CLIB', tablaPartidas: 'PAR_FACTR' },
-  D: { clave: 'D', descripcion: 'Devolución', tabla: 'FACTD', tablaClib: 'FACTD_CLIB', tablaPartidas: 'PAR_FACTD' },
-  V: { clave: 'V', descripcion: 'Nota de venta', tabla: 'FACTV', tablaClib: 'FACTV_CLIB', tablaPartidas: 'PAR_FACTV' },
-  A: { clave: 'A', descripcion: 'Parcialidad / cobro', tabla: 'FACTA', tablaClib: 'FACTA_CLIB', tablaPartidas: 'PAR_FACTA' },
-  E: { clave: 'E', descripcion: 'Nota de crédito', tabla: 'FACTE', tablaClib: 'FACTE_CLIB', tablaPartidas: 'PAR_FACTE' },
-  G: { clave: 'G', descripcion: 'Comprobante de pago', tabla: 'FACTG', tablaClib: 'FACTG_CLIB', tablaPartidas: 'PAR_FACTG' }
+  F: {
+    clave: 'F',
+    descripcion: 'Factura',
+    tabla: 'FACTF',
+    tablaClib: 'FACTF_CLIB',
+    tablaPartidas: 'PAR_FACTF',
+    tablaPartidasClib: 'PAR_FACTF_CLIB'
+  },
+  P: {
+    clave: 'P',
+    descripcion: 'Pedido',
+    tabla: 'FACTP',
+    tablaClib: 'FACTP_CLIB',
+    tablaPartidas: 'PAR_FACTP',
+    tablaPartidasClib: 'PAR_FACTP_CLIB'
+  },
+  C: {
+    clave: 'C',
+    descripcion: 'Cotización',
+    tabla: 'FACTC',
+    tablaClib: 'FACTC_CLIB',
+    tablaPartidas: 'PAR_FACTC',
+    tablaPartidasClib: 'PAR_FACTC_CLIB'
+  },
+  R: {
+    clave: 'R',
+    descripcion: 'Remisión',
+    tabla: 'FACTR',
+    tablaClib: 'FACTR_CLIB',
+    tablaPartidas: 'PAR_FACTR',
+    tablaPartidasClib: 'PAR_FACTR_CLIB'
+  },
+  D: {
+    clave: 'D',
+    descripcion: 'Devolución',
+    tabla: 'FACTD',
+    tablaClib: 'FACTD_CLIB',
+    tablaPartidas: 'PAR_FACTD',
+    tablaPartidasClib: 'PAR_FACTD_CLIB'
+  },
+  V: {
+    clave: 'V',
+    descripcion: 'Nota de venta',
+    tabla: 'FACTV',
+    tablaClib: 'FACTV_CLIB',
+    tablaPartidas: 'PAR_FACTV',
+    tablaPartidasClib: 'PAR_FACTV_CLIB'
+  },
+  A: {
+    clave: 'A',
+    descripcion: 'Parcialidad / cobro',
+    tabla: 'FACTA',
+    tablaClib: 'FACTA_CLIB',
+    tablaPartidas: 'PAR_FACTA',
+    tablaPartidasClib: 'PAR_FACTA_CLIB'
+  },
+  E: {
+    clave: 'E',
+    descripcion: 'Nota de crédito',
+    tabla: 'FACTE',
+    tablaClib: 'FACTE_CLIB',
+    tablaPartidas: 'PAR_FACTE',
+    tablaPartidasClib: 'PAR_FACTE_CLIB'
+  },
+  G: {
+    clave: 'G',
+    descripcion: 'Comprobante de pago',
+    tabla: 'FACTG',
+    tablaClib: 'FACTG_CLIB',
+    tablaPartidas: 'PAR_FACTG',
+    tablaPartidasClib: 'PAR_FACTG_CLIB'
+  }
 };
 
 const MAPA_IDTABLAS_DOCUMENTO = {
@@ -27,8 +90,8 @@ const MAPA_IDTABLAS_DOCUMENTO = {
   G: ['FACTG_CLIB']
 };
 
-const MAPA_IDTABLAS_PARTIDAS = {
-  F: ['PAR_FACT_CLIB', 'PAR_FACTF_CLIB', 'PAR_FACF_CLIB'],
+const MAPA_IDTABLAS_PARAM_PARTIDAS = {
+  F: ['PAR_FACTF_CLIB', 'PAR_FACF_CLIB'],
   P: ['PAR_FACTP_CLIB', 'PAR_FACP_CLIB'],
   C: ['PAR_FACTC_CLIB', 'PAR_FACC_CLIB'],
   R: ['PAR_FACTR_CLIB', 'PAR_FACR_CLIB'],
@@ -45,7 +108,7 @@ const CAMPOS_LIBRES = Array.from({ length: 11 }, (_, indice) => `CAMPLIB${indice
 const LONGITUD_MAXIMA_BUSQUEDA_GENERAL = 30;
 const LONGITUD_MAXIMA_CVE_DOC = 20;
 const LONGITUD_MAXIMA_CVE_CLIENTE = 10;
-const CONDICION_DOCUMENTO_VIGENTE = "COALESCE(STATUS, '') <> 'C'";
+const CONDICION_DOCUMENTO_VIGENTE = "TRIM(COALESCE(STATUS, '')) <> 'C'";
 const PUERTO_SERVIDOR = Number(process.env.PORT || 3001);
 const RUTA_BASE_DATOS = obtenerRutaBaseDatos();
 const CONFIGURACION_FIREBIRD = {
@@ -92,7 +155,9 @@ aplicacion.get('/api/documentos/buscar', asyncHandler(async (req, res) => {
     if (termino) {
       const comparadorDocumento = crearComparadorBusqueda(termino, LONGITUD_MAXIMA_CVE_DOC);
       const comparadorCliente = crearComparadorBusqueda(termino, LONGITUD_MAXIMA_CVE_CLIENTE);
-      condiciones.push('(UPPER(CVE_DOC) LIKE ? OR UPPER(CVE_CLPV) LIKE ? )');
+      condiciones.push(
+        "(UPPER(TRIM(CVE_DOC)) LIKE '%' || ? || '%' OR UPPER(TRIM(CVE_CLPV)) LIKE '%' || ? || '%')"
+      );
       parametros.push(comparadorDocumento, comparadorCliente);
     }
 
@@ -166,7 +231,8 @@ aplicacion.put('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
   const camposNormalizados = {};
   CAMPOS_LIBRES.forEach((campo) => {
     const valor = camposRecibidos[campo];
-    camposNormalizados[campo] = valor === undefined || valor === null ? null : String(valor).trim();
+    const texto = valor === undefined || valor === null ? '' : String(valor).trim();
+    camposNormalizados[campo] = texto ? texto : null;
   });
 
   const partidasNormalizadas = normalizarPartidas(partidasRecibidas);
@@ -454,38 +520,43 @@ function normalizarPartidas(partidas) {
     const campos = {};
     CAMPOS_LIBRES.forEach((campo) => {
       const valor = camposOrigen[campo];
-      campos[campo] = valor === undefined || valor === null ? null : String(valor).trim();
+      const texto = valor === undefined || valor === null ? '' : String(valor).trim();
+      campos[campo] = texto ? texto : null;
     });
     mapa.set(numero, { numero, campos });
   });
   return Array.from(mapa.values());
 }
 
+function tieneInformacionEnCampos(campos) {
+  if (!campos || typeof campos !== 'object') {
+    return false;
+  }
+  return CAMPOS_LIBRES.some((campo) => {
+    const valor = campos[campo];
+    return valor !== null && valor !== '';
+  });
+}
+
 async function guardarCamposLibresPartidas(db, tablaPartidasClib, claveDocumento, partidas) {
+  const clave = claveDocumento.toUpperCase();
+  await ejecutarConsulta(db, `DELETE FROM ${tablaPartidasClib} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`, [clave]);
   if (!partidas.length) {
     return;
   }
-  const consultaExistentes = `SELECT NUM_PART FROM ${tablaPartidasClib} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`;
-  const registros = await ejecutarConsulta(db, consultaExistentes, [claveDocumento.toUpperCase()]);
-  const existentes = new Set(
-    registros
-      .map((registro) => Number.parseInt(registro.NUM_PART, 10))
-      .filter((numero) => !Number.isNaN(numero))
-  );
+
+  const partidasConDatos = partidas.filter((partida) => tieneInformacionEnCampos(partida.campos));
+  if (!partidasConDatos.length) {
+    return;
+  }
 
   const columnas = ['CLAVE_DOC', 'NUM_PART', ...CAMPOS_LIBRES];
   const marcadoresInsercion = columnas.map(() => '?').join(', ');
-  const asignaciones = CAMPOS_LIBRES.map((campo) => `${campo} = ?`).join(', ');
+  const consultaInsercion = `INSERT INTO ${tablaPartidasClib} (${columnas.join(', ')}) VALUES (${marcadoresInsercion})`;
 
-  for (const partida of partidas) {
+  for (const partida of partidasConDatos) {
     const valores = CAMPOS_LIBRES.map((campo) => partida.campos[campo]);
-    if (existentes.has(partida.numero)) {
-      const consultaActualizacion = `UPDATE ${tablaPartidasClib} SET ${asignaciones} WHERE TRIM(UPPER(CLAVE_DOC)) = ? AND NUM_PART = ?`;
-      await ejecutarConsulta(db, consultaActualizacion, [...valores, claveDocumento.toUpperCase(), partida.numero]);
-      continue;
-    }
-    const consultaInsercion = `INSERT INTO ${tablaPartidasClib} (${columnas.join(', ')}) VALUES (${marcadoresInsercion})`;
-    await ejecutarConsulta(db, consultaInsercion, [claveDocumento.toUpperCase(), partida.numero, ...valores]);
+    await ejecutarConsulta(db, consultaInsercion, [clave, partida.numero, ...valores]);
   }
 }
 
@@ -507,9 +578,9 @@ function limitarLongitudBusqueda(texto, longitudMaxima = LONGITUD_MAXIMA_BUSQUED
 function crearComparadorBusqueda(texto, longitudMaxima) {
   const cadena = limitarLongitudBusqueda(texto, longitudMaxima);
   if (!cadena) {
-    return '%%';
+    return '';
   }
-  return `%${cadena.toUpperCase()}%`;
+  return cadena.toUpperCase();
 }
 
 function normalizarIdentificadorTabla(valor) {
@@ -538,9 +609,12 @@ function obtenerIdTablasParametrosPartidas(definicion, empresa) {
   }
   const candidatos = new Set();
   agregarCandidatosIdTabla(candidatos, definicion.tablaPartidas, empresa);
-  const tablaClib = `${definicion.tablaPartidas}_CLIB`;
-  agregarCandidatosIdTabla(candidatos, tablaClib, empresa);
-  const genericos = MAPA_IDTABLAS_PARTIDAS[definicion.clave];
+  agregarCandidatosIdTabla(candidatos, definicion.tablaPartidasClib, empresa);
+  if (definicion.tablaPartidas) {
+    const tablaClib = `${definicion.tablaPartidas}_CLIB`;
+    agregarCandidatosIdTabla(candidatos, tablaClib, empresa);
+  }
+  const genericos = MAPA_IDTABLAS_PARAM_PARTIDAS[definicion.clave];
   if (genericos) {
     genericos.forEach((id) => agregarCandidatosIdTabla(candidatos, id, empresa));
   }
@@ -574,11 +648,15 @@ async function obtenerTablaPartidasClib(db, definicion, empresa) {
     return null;
   }
   const candidatos = new Set();
+  const preferida = normalizarIdentificadorTabla(definicion.tablaPartidasClib);
+  if (preferida) {
+    candidatos.add(preferida);
+  }
   const base = normalizarIdentificadorTabla(definicion.tablaPartidas);
   if (base) {
     candidatos.add(`${base}_CLIB`);
   }
-  const adicionales = MAPA_IDTABLAS_PARTIDAS[definicion.clave];
+  const adicionales = MAPA_IDTABLAS_PARAM_PARTIDAS[definicion.clave];
   if (adicionales) {
     adicionales.forEach((id) => {
       const normalizado = normalizarIdentificadorTabla(id);
@@ -607,8 +685,12 @@ function crearSetIdTablasPartidas() {
       conjunto.add(base);
       conjunto.add(`${base}_CLIB`);
     }
+    const tablaClib = normalizarIdentificadorTabla(tipo.tablaPartidasClib);
+    if (tablaClib) {
+      conjunto.add(tablaClib);
+    }
   });
-  Object.values(MAPA_IDTABLAS_PARTIDAS).forEach((lista) => {
+  Object.values(MAPA_IDTABLAS_PARAM_PARTIDAS).forEach((lista) => {
     lista.forEach((id) => {
       const normalizado = normalizarIdentificadorTabla(id);
       if (normalizado) {
