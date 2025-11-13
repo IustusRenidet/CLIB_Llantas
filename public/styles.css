@@ -782,20 +782,9 @@ body {
 }
 
 .panel-partidas {
-  display: grid;
-  grid-template-columns: 1fr;
+  display: flex;
+  flex-direction: column;
   gap: 1.25rem;
-}
-
-.panel-partidas > * {
-  min-width: 0;
-}
-
-@media (min-width: 1100px) {
-  .panel-partidas {
-    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
-    align-items: flex-start;
-  }
 }
 
 .tabla-documentos--partidas table {
