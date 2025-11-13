@@ -13,6 +13,16 @@ const TIPOS_DOCUMENTO = {
   A: { clave: 'A', descripcion: 'Parcialidad / cobro', tabla: 'FACTA', tablaClib: 'FACTA_CLIB', tablaPartidas: 'PAR_FACTA' }
 };
 
+const MAPA_IDTABLA_PARTIDAS = {
+  F: ['PAR_FACT_CLIB', 'PAR_FACTF_CLIB'],
+  P: ['PAR_FACP_CLIB', 'PAR_FACTP_CLIB'],
+  C: ['PAR_FACC_CLIB', 'PAR_FACTC_CLIB'],
+  R: ['PAR_FACR_CLIB', 'PAR_FACTR_CLIB'],
+  D: ['PAR_FACD_CLIB', 'PAR_FACTD_CLIB'],
+  V: ['PAR_FACV_CLIB', 'PAR_FACTV_CLIB'],
+  A: ['PAR_FACA_CLIB', 'PAR_FACTA_CLIB']
+};
+
 const CAMPOS_LIBRES = Array.from({ length: 11 }, (_, indice) => `CAMPLIB${indice + 1}`);
 const PUERTO_SERVIDOR = Number(process.env.PORT || 3001);
 const RUTA_BASE_DATOS = obtenerRutaBaseDatos();
@@ -107,7 +117,7 @@ aplicacion.get('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
     }
 
     const camposLibres = await obtenerCamposLibres(db, tablaClib, claveDocumento);
-    const etiquetas = (await obtenerEtiquetasCampos(db, tablaParametros, definicion.tablaClib)) || {};
+    const etiquetas = await obtenerEtiquetasCampos(db, tablaParametros, definicion);
     const partidas = (await obtenerPartidas(db, tablaPartidas, claveDocumento)) || [];
 
     return { documento, camposLibres, etiquetas, partidas };
@@ -294,20 +304,42 @@ async function obtenerCamposLibres(db, tablaClib, claveDocumento) {
   return resultado;
 }
 
-async function obtenerEtiquetasCampos(db, tablaParametros, idTabla) {
+async function obtenerEtiquetasCampos(db, tablaParametros, definicion) {
   const existeTablaParametros = await verificarTabla(db, tablaParametros);
   if (!existeTablaParametros) {
-    return null;
+    return crearMapaEtiquetas();
   }
-  const consulta = `SELECT CAMPO, ETIQUETA FROM ${tablaParametros} WHERE TRIM(UPPER(IDTABLA)) = ?`;
-  const registros = await ejecutarConsulta(db, consulta, [idTabla.toUpperCase()]);
-  const etiquetas = {};
+
+  const mapaIdTablas = new Map();
+  const idDocumento = normalizarIdentificadorTabla(definicion.tablaClib);
+  if (idDocumento) {
+    mapaIdTablas.set(idDocumento, 'documento');
+  }
+
+  obtenerIdTablasParametrosPartidas(definicion).forEach((id) => {
+    mapaIdTablas.set(id, 'partidas');
+  });
+
+  if (!mapaIdTablas.size) {
+    return crearMapaEtiquetas();
+  }
+
+  const ids = Array.from(mapaIdTablas.keys());
+  const marcadores = ids.map(() => '?').join(', ');
+  const consulta = `SELECT CAMPO, ETIQUETA, IDTABLA FROM ${tablaParametros} WHERE TRIM(UPPER(IDTABLA)) IN (${marcadores})`;
+  const registros = await ejecutarConsulta(db, consulta, ids);
+  const etiquetas = crearMapaEtiquetas();
+
   registros.forEach((registro) => {
     const campo = formatearTexto(registro.CAMPO).toUpperCase();
-    if (CAMPOS_LIBRES.includes(campo)) {
-      etiquetas[campo] = formatearTexto(registro.ETIQUETA);
+    if (!CAMPOS_LIBRES.includes(campo)) {
+      return;
     }
+    const idTabla = normalizarIdentificadorTabla(registro.IDTABLA);
+    const origen = mapaIdTablas.get(idTabla) || 'documento';
+    etiquetas[origen][campo] = formatearTexto(registro.ETIQUETA);
   });
+
   return etiquetas;
 }
 
@@ -344,6 +376,39 @@ async function guardarCamposLibres(db, tablaClib, claveDocumento, campos) {
   const marcadores = columnas.map(() => '?').join(', ');
   const consultaInsercion = `INSERT INTO ${tablaClib} (${columnas.join(', ')}) VALUES (${marcadores})`;
   await ejecutarConsulta(db, consultaInsercion, [claveDocumento.toUpperCase(), ...valores]);
+}
+
+function crearMapaEtiquetas() {
+  return { documento: {}, partidas: {} };
+}
+
+function normalizarIdentificadorTabla(valor) {
+  if (!valor) {
+    return '';
+  }
+  return valor.toString().trim().toUpperCase();
+}
+
+function obtenerIdTablasParametrosPartidas(definicion) {
+  if (!definicion) {
+    return [];
+  }
+  const candidatos = new Set();
+  const tablaBase = normalizarIdentificadorTabla(definicion.tablaPartidas);
+  if (tablaBase) {
+    candidatos.add(tablaBase);
+    candidatos.add(`${tablaBase}_CLIB`);
+  }
+  const genericos = MAPA_IDTABLA_PARTIDAS[definicion.clave];
+  if (genericos) {
+    genericos.forEach((id) => {
+      const normalizado = normalizarIdentificadorTabla(id);
+      if (normalizado) {
+        candidatos.add(normalizado);
+      }
+    });
+  }
+  return Array.from(candidatos);
 }
 
 function obtenerRutaBaseDatos() {

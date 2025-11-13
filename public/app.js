@@ -1,4 +1,5 @@
 const elementos = {
+  app: document.getElementById('app'),
   formularioBusqueda: document.getElementById('formulario-busqueda'),
   formularioCampos: document.getElementById('formulario-campos'),
   tipoDocumento: document.getElementById('tipo-documento'),
@@ -14,7 +15,11 @@ const elementos = {
   contenedorCampos: document.getElementById('contenedor-campos'),
   estadoGuardado: document.getElementById('estado-guardado'),
   tablaPartidas: document.getElementById('partidas'),
-  mensajeSinPartidas: document.getElementById('sin-partidas')
+  mensajeSinPartidas: document.getElementById('sin-partidas'),
+  panelDetalle: document.getElementById('panel-detalle'),
+  botonVolver: document.getElementById('boton-volver'),
+  filtroCampos: document.getElementById('filtro-campos'),
+  toastContainer: document.getElementById('toast-container')
 };
 
 const plantillas = {
@@ -23,7 +28,9 @@ const plantillas = {
 };
 
 let documentoSeleccionado = null;
-let etiquetasCampos = {};
+let etiquetasCampos = crearEstructuraEtiquetas();
+let cambiosPendientes = false;
+let temporizadorGuardado = null;
 
 async function cargarTiposDocumento() {
   const respuesta = await fetch('/api/tipos-documento');
@@ -73,7 +80,7 @@ async function buscarDocumentos(evento) {
       fila.querySelector('[data-columna="cliente"]').textContent = registro.cliente || '—';
       fila.querySelector('[data-columna="fecha"]').textContent = formatearFechaLocal(registro.fechaDoc);
       const boton = fila.querySelector('button');
-      boton.addEventListener('click', () => cargarDocumento(registro));
+      boton.addEventListener('click', () => seleccionarDocumento(registro));
       elementos.tablaResultados.appendChild(fila);
     });
   } catch (error) {
@@ -84,6 +91,16 @@ async function buscarDocumentos(evento) {
 function limpiarResultados() {
   elementos.tablaResultados.innerHTML = '';
   elementos.mensajeSinResultados.hidden = true;
+}
+
+function seleccionarDocumento(registro) {
+  if (!registro) {
+    return;
+  }
+  if (!confirmarSalidaDeCambios()) {
+    return;
+  }
+  cargarDocumento(registro);
 }
 
 async function cargarDocumento(registro) {
@@ -102,7 +119,7 @@ async function cargarDocumento(registro) {
       cveDoc: registro.cveDoc
     };
 
-    etiquetasCampos = datos.etiquetas || {};
+    etiquetasCampos = crearEstructuraEtiquetas(datos.etiquetas);
     elementos.descripcionDocumento.textContent = `Editando ${datos.documento.descripcion}.`;
     elementos.resumenDocumento.hidden = false;
     elementos.detalleClave.textContent = datos.documento.cveDoc;
@@ -111,6 +128,7 @@ async function cargarDocumento(registro) {
 
     pintarCamposLibres(datos.camposLibres || {});
     pintarPartidas(datos.partidas || []);
+    activarVistaDetalle();
   } catch (error) {
     mostrarMensaje(error.message);
   }
@@ -119,27 +137,44 @@ async function cargarDocumento(registro) {
 function pintarCamposLibres(campos = {}) {
   elementos.formularioCampos.hidden = false;
   elementos.contenedorCampos.innerHTML = '';
+  cambiosPendientes = false;
+  actualizarEstadoGuardado('');
 
   for (let indice = 1; indice <= 11; indice += 1) {
     const clave = `CAMPLIB${indice}`;
-    const etiqueta = etiquetasCampos[clave] || `Campo libre ${indice}`;
+    const etiqueta = obtenerEtiquetaCampo(clave, indice);
+    const origen = obtenerOrigenCampo(clave);
 
     const campo = document.createElement('label');
     campo.className = 'campo-libre';
+    campo.dataset.origenCampo = origen;
+
+    const encabezado = document.createElement('div');
+    encabezado.className = 'campo-libre__encabezado';
 
     const span = document.createElement('span');
     span.textContent = etiqueta;
-    campo.appendChild(span);
+    encabezado.appendChild(span);
+
+    const insignia = document.createElement('span');
+    insignia.className = `campo-libre__origen campo-libre__origen--${origen}`;
+    insignia.textContent = origen === 'partida' ? 'Partidas' : 'Documento';
+    encabezado.appendChild(insignia);
+
+    campo.appendChild(encabezado);
 
     const entrada = document.createElement('input');
     entrada.type = 'text';
     entrada.value = campos[clave] || '';
     entrada.dataset.claveCampo = clave;
     entrada.maxLength = 100;
+    entrada.addEventListener('input', marcarCambiosPendientes);
     campo.appendChild(entrada);
 
     elementos.contenedorCampos.appendChild(campo);
   }
+
+  prepararFiltroCampos();
 }
 
 function pintarPartidas(partidas = []) {
@@ -158,19 +193,80 @@ function pintarPartidas(partidas = []) {
   });
 }
 
+function prepararFiltroCampos() {
+  if (!elementos.filtroCampos) {
+    return;
+  }
+  const tieneDocumento = Object.keys(etiquetasCampos.documento || {}).length > 0;
+  elementos.filtroCampos.value = tieneDocumento ? 'documento' : 'todos';
+  aplicarFiltroCampos();
+}
+
+function aplicarFiltroCampos() {
+  if (!elementos.filtroCampos) {
+    return;
+  }
+  const filtro = elementos.filtroCampos.value;
+  elementos.contenedorCampos.querySelectorAll('.campo-libre').forEach((campo) => {
+    const origen = campo.dataset.origenCampo || 'documento';
+    const visible = filtro === 'todos' || filtro === origen;
+    campo.hidden = !visible;
+  });
+}
+
+function marcarCambiosPendientes() {
+  cambiosPendientes = true;
+  actualizarEstadoGuardado('Cambios sin guardar');
+}
+
+function activarVistaDetalle() {
+  if (elementos.app) {
+    elementos.app.classList.add('app--detalle-activo');
+  }
+  if (elementos.panelDetalle) {
+    elementos.panelDetalle.scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+}
+
+function desactivarVistaDetalle() {
+  if (elementos.app) {
+    elementos.app.classList.remove('app--detalle-activo');
+  }
+}
+
+function volverAPanelBusqueda() {
+  if (!confirmarSalidaDeCambios()) {
+    return;
+  }
+  documentoSeleccionado = null;
+  cambiosPendientes = false;
+  actualizarEstadoGuardado('');
+  ocultarFormularioCampos();
+  desactivarVistaDetalle();
+}
+
+function confirmarSalidaDeCambios() {
+  if (!cambiosPendientes) {
+    return true;
+  }
+  return window.confirm('Tienes cambios sin guardar. Si continúas, no se aplicarán.');
+}
+
 function ocultarFormularioCampos() {
   elementos.formularioCampos.hidden = true;
   elementos.resumenDocumento.hidden = true;
   elementos.descripcionDocumento.textContent =
     'Selecciona un documento para mostrar su información y editar los campos libres.';
+  elementos.estadoGuardado.textContent = '';
+  elementos.estadoGuardado.classList.remove('estado-guardado--error');
 }
 
 function mostrarMensaje(texto) {
-  elementos.estadoGuardado.textContent = limpiarMensaje(texto);
-  elementos.estadoGuardado.classList.add('estado-guardado--error');
-  setTimeout(() => {
-    elementos.estadoGuardado.textContent = '';
-    elementos.estadoGuardado.classList.remove('estado-guardado--error');
+  const mensaje = limpiarMensaje(texto);
+  actualizarEstadoGuardado(mensaje, true);
+  mostrarToast(mensaje, 'error');
+  temporizadorGuardado = setTimeout(() => {
+    actualizarEstadoGuardado('');
   }, 4000);
 }
 
@@ -219,8 +315,7 @@ async function guardarCampos(evento) {
     campos[input.dataset.claveCampo] = input.value.trim();
   });
 
-  elementos.estadoGuardado.textContent = 'Guardando…';
-  elementos.estadoGuardado.classList.remove('estado-guardado--error');
+  actualizarEstadoGuardado('Guardando…');
 
   const url = `/api/documentos/${documentoSeleccionado.tipo}/${documentoSeleccionado.empresa}/${encodeURIComponent(
     documentoSeleccionado.cveDoc
@@ -240,12 +335,73 @@ async function guardarCampos(evento) {
       throw new Error(datos.mensaje || 'No fue posible guardar los cambios.');
     }
 
-    elementos.estadoGuardado.textContent = 'Cambios guardados';
-    setTimeout(() => {
-      elementos.estadoGuardado.textContent = '';
+    cambiosPendientes = false;
+    actualizarEstadoGuardado('Cambios guardados');
+    mostrarToast('Cambios guardados', 'exito');
+    temporizadorGuardado = setTimeout(() => {
+      actualizarEstadoGuardado('');
     }, 2500);
   } catch (error) {
     mostrarMensaje(error.message);
+  }
+}
+
+function crearEstructuraEtiquetas(etiquetas) {
+  return {
+    documento: (etiquetas && etiquetas.documento) || {},
+    partidas: (etiquetas && etiquetas.partidas) || {}
+  };
+}
+
+function obtenerOrigenCampo(clave) {
+  if (etiquetasCampos.partidas && Object.prototype.hasOwnProperty.call(etiquetasCampos.partidas, clave)) {
+    return 'partida';
+  }
+  return 'documento';
+}
+
+function obtenerEtiquetaCampo(clave, indice) {
+  if (etiquetasCampos.documento && etiquetasCampos.documento[clave]) {
+    return etiquetasCampos.documento[clave];
+  }
+  if (etiquetasCampos.partidas && etiquetasCampos.partidas[clave]) {
+    return `${etiquetasCampos.partidas[clave]} (Partidas)`;
+  }
+  return `Campo libre ${indice}`;
+}
+
+function mostrarToast(texto, tipo = 'info') {
+  if (!elementos.toastContainer) {
+    return;
+  }
+  const toast = document.createElement('div');
+  const claseTipo = tipo === 'error' ? 'toast--error' : tipo === 'exito' ? 'toast--exito' : '';
+  toast.className = `toast ${claseTipo}`.trim();
+  toast.textContent = limpiarMensaje(texto);
+  elementos.toastContainer.appendChild(toast);
+  requestAnimationFrame(() => {
+    toast.classList.add('toast--visible');
+  });
+  setTimeout(() => cerrarToast(toast), 4500);
+}
+
+function cerrarToast(toast) {
+  if (!toast) {
+    return;
+  }
+  toast.classList.remove('toast--visible');
+  setTimeout(() => {
+    toast.remove();
+  }, 300);
+}
+
+function actualizarEstadoGuardado(texto, esError = false) {
+  clearTimeout(temporizadorGuardado);
+  elementos.estadoGuardado.textContent = texto;
+  if (esError) {
+    elementos.estadoGuardado.classList.add('estado-guardado--error');
+  } else {
+    elementos.estadoGuardado.classList.remove('estado-guardado--error');
   }
 }
 
@@ -257,5 +413,26 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-elementos.formularioBusqueda.addEventListener('submit', buscarDocumentos);
-elementos.formularioCampos.addEventListener('submit', guardarCampos);
+if (elementos.formularioBusqueda) {
+  elementos.formularioBusqueda.addEventListener('submit', buscarDocumentos);
+}
+
+if (elementos.formularioCampos) {
+  elementos.formularioCampos.addEventListener('submit', guardarCampos);
+}
+
+if (elementos.botonVolver) {
+  elementos.botonVolver.addEventListener('click', volverAPanelBusqueda);
+}
+
+if (elementos.filtroCampos) {
+  elementos.filtroCampos.addEventListener('change', aplicarFiltroCampos);
+}
+
+window.addEventListener('beforeunload', (evento) => {
+  if (!cambiosPendientes) {
+    return;
+  }
+  evento.preventDefault();
+  evento.returnValue = '';
+});
