@@ -12,6 +12,7 @@ const elementos = {
   detalleCliente: document.getElementById('detalle-cliente'),
   detalleFecha: document.getElementById('detalle-fecha'),
   contenedorCampos: document.getElementById('contenedor-campos'),
+  mensajeCamposDocumento: document.getElementById('sin-campos-documento'),
   estadoGuardado: document.getElementById('estado-guardado'),
   tablaPartidas: document.getElementById('partidas'),
   mensajeSinPartidas: document.getElementById('sin-partidas'),
@@ -42,7 +43,8 @@ let etiquetasCampos = crearEstructuraEtiquetas();
 let cambiosPendientes = false;
 let temporizadorGuardado = null;
 let temporizadorBusqueda = null;
-let camposPartidasDisponibles = false;
+let camposDocumentoDisponibles = [];
+let camposPartidasDisponibles = [];
 let resolverModalConfirmacion = null;
 let ultimoElementoEnfoque = null;
 let temporizadorOcultarModal = null;
@@ -157,7 +159,8 @@ async function cargarDocumento(registro) {
     };
 
     etiquetasCampos = crearEstructuraEtiquetas(datos.etiquetas);
-    camposPartidasDisponibles = Boolean(datos.camposPartidasDisponibles);
+    camposDocumentoDisponibles = obtenerCamposDocumentoDisponibles(datos);
+    camposPartidasDisponibles = obtenerCamposPartidasDisponibles(datos);
     elementos.descripcionDocumento.textContent = `${datos.documento.descripcion}.`;
     elementos.resumenDocumento.hidden = false;
     elementos.detalleClave.textContent = datos.documento.cveDoc;
@@ -178,10 +181,21 @@ function pintarCamposLibres(campos = {}) {
   cambiosPendientes = false;
   actualizarEstadoGuardado('');
 
+  if (elementos.mensajeCamposDocumento) {
+    elementos.mensajeCamposDocumento.hidden = true;
+  }
+
+  if (!camposDocumentoDisponibles.length) {
+    if (elementos.mensajeCamposDocumento) {
+      elementos.mensajeCamposDocumento.hidden = false;
+    }
+    return;
+  }
+
   const lista = document.createElement('div');
   lista.className = 'campos-libres__lista';
 
-  CAMPOS_LIBRES.forEach((clave, indice) => {
+  camposDocumentoDisponibles.forEach((clave, indice) => {
     const etiqueta = obtenerEtiquetaCampo(clave, indice + 1);
     const campo = document.createElement('label');
     campo.className = 'campo-libre';
@@ -242,7 +256,7 @@ function pintarCamposLibresPartidas(partidas = []) {
     return;
   }
 
-  if (!camposPartidasDisponibles) {
+  if (!camposPartidasDisponibles.length) {
     elementos.camposPartidas.hidden = false;
     elementos.listaCamposPartidas.hidden = true;
     elementos.mensajeCamposPartidas.textContent = 'No hay campos libres configurados para las partidas.';
@@ -265,7 +279,7 @@ function pintarCamposLibresPartidas(partidas = []) {
     lista.id = idLista;
 
     const encabezado = crearEncabezadoPartida(contenedor, partida, idLista);
-    CAMPOS_LIBRES.forEach((clave, indice) => {
+    camposPartidasDisponibles.forEach((clave, indice) => {
       const etiqueta = obtenerEtiquetaCampoPartida(clave, indice + 1);
       const campo = document.createElement('label');
       campo.className = 'campo-libre campo-libre--partida';
@@ -515,7 +529,11 @@ function ocultarFormularioCampos() {
     'Selecciona un documento para mostrar su información y editar los campos libres.';
   elementos.estadoGuardado.textContent = '';
   elementos.estadoGuardado.classList.remove('estado-guardado--error');
-  camposPartidasDisponibles = false;
+  camposDocumentoDisponibles = [];
+  camposPartidasDisponibles = [];
+  if (elementos.mensajeCamposDocumento) {
+    elementos.mensajeCamposDocumento.hidden = true;
+  }
   if (elementos.camposPartidas) {
     elementos.camposPartidas.hidden = true;
   }
@@ -582,7 +600,7 @@ async function guardarCampos(evento) {
   });
 
   const partidas = [];
-  if (camposPartidasDisponibles && elementos.listaCamposPartidas) {
+  if (camposPartidasDisponibles.length && elementos.listaCamposPartidas) {
     // Agrupa por contenedor de partida en lugar de por input individual
     const contenedoresPartida = elementos.listaCamposPartidas.querySelectorAll('.partida-campos');
     contenedoresPartida.forEach((contenedor) => {
@@ -651,6 +669,40 @@ function obtenerEtiquetaCampoPartida(clave, indice) {
     return etiquetasCampos.partidas[clave];
   }
   return `Campo libre ${indice}`;
+}
+
+function obtenerCamposDocumentoDisponibles(datos = {}) {
+  if (Object.prototype.hasOwnProperty.call(datos, 'camposDisponiblesDocumento')) {
+    return normalizarCamposDisponibles(datos.camposDisponiblesDocumento);
+  }
+  return CAMPOS_LIBRES.slice();
+}
+
+function obtenerCamposPartidasDisponibles(datos = {}) {
+  if (Array.isArray(datos.camposPartidasDisponibles)) {
+    return normalizarCamposDisponibles(datos.camposPartidasDisponibles);
+  }
+  if (datos.camposPartidasDisponibles === true) {
+    return CAMPOS_LIBRES.slice();
+  }
+  return [];
+}
+
+function normalizarCamposDisponibles(lista) {
+  if (!Array.isArray(lista)) {
+    return [];
+  }
+  const vistos = new Set();
+  const campos = [];
+  lista.forEach((campo) => {
+    const clave = (campo || '').toString().trim().toUpperCase();
+    if (!clave || !CAMPOS_LIBRES.includes(clave) || vistos.has(clave)) {
+      return;
+    }
+    vistos.add(clave);
+    campos.push(clave);
+  });
+  return campos;
 }
 
 function mostrarToast(texto, tipo = 'info') {

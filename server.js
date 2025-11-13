@@ -134,6 +134,8 @@ const CONFIGURACION_FIREBIRD = {
 
 const aplicacion = express();
 const cacheTablas = new Map();
+const cacheCamposTabla = new Map();
+const CAMPOS_LIBRES_SQL = CAMPOS_LIBRES.map((campo) => `'${campo}'`).join(', ');
 let servidorHttp = null;
 
 aplicacion.disable('x-powered-by');
@@ -206,21 +208,29 @@ aplicacion.get('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
     const tablaParametros = `PARAM_CAMPOSLIBRES${empresa}`;
 
     const existeDocumentos = await verificarTabla(db, tablaDocumentos);
-    const existeClib = await verificarTabla(db, tablaClib);
-    if (!existeDocumentos || !existeClib) {
+    if (!existeDocumentos) {
       throw new AplicacionError('No se encontraron las tablas necesarias en la base de datos.', 404);
     }
 
+    const existeClib = await verificarTabla(db, tablaClib);
     const documento = await obtenerDocumento(db, tablaDocumentos, claveDocumento);
     if (!documento) {
       throw new AplicacionError(`No existe el documento ${claveDocumento} en la empresa ${empresa}.`, 404);
     }
 
-    const camposLibres = await obtenerCamposLibres(db, tablaClib, claveDocumento);
+    const camposDisponiblesDocumento = existeClib ? await obtenerCamposDisponiblesEnTabla(db, tablaClib) : [];
+    const camposLibres = camposDisponiblesDocumento.length ? await obtenerCamposLibres(db, tablaClib, claveDocumento, camposDisponiblesDocumento) : {};
     const etiquetas = await obtenerEtiquetasCampos(db, tablaParametros, definicion, empresa);
     const { partidas, camposDisponiblesPartidas } = await obtenerPartidas(db, tablaPartidas, tablaPartidasClib, claveDocumento);
 
-    return { documento, camposLibres, etiquetas, partidas, camposPartidasDisponibles: camposDisponiblesPartidas };
+    return {
+      documento,
+      camposLibres,
+      etiquetas,
+      camposDisponiblesDocumento,
+      partidas,
+      camposPartidasDisponibles: camposDisponiblesPartidas
+    };
   });
 
   res.json({ ok: true, ...datos });
@@ -253,23 +263,32 @@ aplicacion.put('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
     const tablaPartidasClib = await obtenerTablaPartidasClib(db, definicion, empresa);
 
     const existeDocumentos = await verificarTabla(db, tablaDocumentos);
-    const existeClib = await verificarTabla(db, tablaClib);
-    if (!existeDocumentos || !existeClib) {
+    if (!existeDocumentos) {
       throw new AplicacionError('No se encontraron las tablas necesarias en la base de datos.', 404);
     }
+    const existeClib = await verificarTabla(db, tablaClib);
 
     const documento = await obtenerDocumento(db, tablaDocumentos, claveDocumento);
     if (!documento) {
       throw new AplicacionError(`No existe el documento ${claveDocumento} en la empresa ${empresa}.`, 404);
     }
 
-    await guardarCamposLibres(db, tablaClib, claveDocumento, camposNormalizados);
+    if (existeClib) {
+      const camposDisponiblesDocumento = await obtenerCamposDisponiblesEnTabla(db, tablaClib);
+      if (camposDisponiblesDocumento.length) {
+        await guardarCamposLibres(db, tablaClib, claveDocumento, camposNormalizados, camposDisponiblesDocumento);
+      }
+    }
 
     if (partidasNormalizadas.length) {
       if (!tablaPartidasClib) {
         throw new AplicacionError('No existen campos libres configurados para las partidas en esta empresa.', 404);
       }
-      await guardarCamposLibresPartidas(db, tablaPartidasClib, claveDocumento, partidasNormalizadas);
+      const camposDisponiblesPartidas = await obtenerCamposDisponiblesEnTabla(db, tablaPartidasClib);
+      if (!camposDisponiblesPartidas.length) {
+        throw new AplicacionError('No existen campos libres configurados para las partidas en esta empresa.', 404);
+      }
+      await guardarCamposLibresPartidas(db, tablaPartidasClib, claveDocumento, partidasNormalizadas, camposDisponiblesPartidas);
     }
   });
 
@@ -391,6 +410,29 @@ async function verificarTabla(db, nombreTabla) {
   return existe;
 }
 
+async function obtenerCamposDisponiblesEnTabla(db, nombreTabla) {
+  const tabla = normalizarIdentificadorTabla(nombreTabla);
+  if (!tabla) {
+    return [];
+  }
+  if (cacheCamposTabla.has(tabla)) {
+    return cacheCamposTabla.get(tabla);
+  }
+  const consulta = `
+    SELECT TRIM(UPPER(RDB$FIELD_NAME)) AS CAMPO
+    FROM RDB$RELATION_FIELDS
+    WHERE TRIM(UPPER(RDB$RELATION_NAME)) = ?
+      AND TRIM(UPPER(RDB$FIELD_NAME)) IN (${CAMPOS_LIBRES_SQL})
+    ORDER BY RDB$FIELD_POSITION
+  `;
+  const registros = await ejecutarConsulta(db, consulta, [tabla]);
+  const campos = registros
+    .map((registro) => normalizarIdentificadorTabla(registro.CAMPO))
+    .filter((campo) => campo && CAMPOS_LIBRES.includes(campo));
+  cacheCamposTabla.set(tabla, campos);
+  return campos;
+}
+
 
 
 async function obtenerDocumento(db, tablaDocumentos, claveDocumento) {
@@ -409,11 +451,14 @@ async function obtenerDocumento(db, tablaDocumentos, claveDocumento) {
   };
 }
 
-async function obtenerCamposLibres(db, tablaClib, claveDocumento) {
-  const consulta = `SELECT ${CAMPOS_LIBRES.join(', ')} FROM ${tablaClib} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`;
+async function obtenerCamposLibres(db, tablaClib, claveDocumento, camposDisponibles = CAMPOS_LIBRES) {
+  if (!camposDisponibles.length) {
+    return {};
+  }
+  const consulta = `SELECT ${camposDisponibles.join(', ')} FROM ${tablaClib} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`;
   const registros = await ejecutarConsulta(db, consulta, [claveDocumento.toUpperCase()]);
   const resultado = {};
-  CAMPOS_LIBRES.forEach((campo) => {
+  camposDisponibles.forEach((campo) => {
     resultado[campo] = registros.length ? formatearTexto(registros[0][campo]) : '';
   });
   return resultado;
@@ -474,15 +519,22 @@ async function obtenerPartidas(db, tablaPartidas, tablaPartidasClib, claveDocume
     });
   }
 
-  const camposDisponiblesPartidas = tablaPartidasClib ? await verificarTabla(db, tablaPartidasClib) : false;
+  let camposDisponiblesPartidas = [];
+  if (tablaPartidasClib) {
+    const existeTablaClib = await verificarTabla(db, tablaPartidasClib);
+    if (existeTablaClib) {
+      camposDisponiblesPartidas = await obtenerCamposDisponiblesEnTabla(db, tablaPartidasClib);
+    }
+  }
+
   const mapaCampos = new Map();
-  if (camposDisponiblesPartidas && partidas.length && tablaPartidasClib) {
-    const consultaCampos = `SELECT NUM_PART, ${CAMPOS_LIBRES.join(', ')} FROM ${tablaPartidasClib} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`;
+  if (camposDisponiblesPartidas.length && partidas.length && tablaPartidasClib) {
+    const consultaCampos = `SELECT NUM_PART, ${camposDisponiblesPartidas.join(', ')} FROM ${tablaPartidasClib} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`;
     const registros = await ejecutarConsulta(db, consultaCampos, [claveDocumento.toUpperCase()]);
     registros.forEach((registro) => {
       const numero = Number.parseInt(registro.NUM_PART, 10) || 0;
       const campos = {};
-      CAMPOS_LIBRES.forEach((campo) => {
+      camposDisponiblesPartidas.forEach((campo) => {
         campos[campo] = formatearTexto(registro[campo]);
       });
       mapaCampos.set(numero, campos);
@@ -497,19 +549,22 @@ async function obtenerPartidas(db, tablaPartidas, tablaPartidasClib, claveDocume
   return { partidas: partidasConCampos, camposDisponiblesPartidas };
 }
 
-async function guardarCamposLibres(db, tablaClib, claveDocumento, campos) {
+async function guardarCamposLibres(db, tablaClib, claveDocumento, campos, columnasDisponibles = CAMPOS_LIBRES) {
+  if (!columnasDisponibles.length) {
+    return;
+  }
   const consultaExistencia = `SELECT FIRST 1 CLAVE_DOC FROM ${tablaClib} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`;
   const registros = await ejecutarConsulta(db, consultaExistencia, [claveDocumento.toUpperCase()]);
-  const valores = CAMPOS_LIBRES.map((campo) => campos[campo]);
+  const valores = columnasDisponibles.map((campo) => (Object.prototype.hasOwnProperty.call(campos, campo) ? campos[campo] : null));
 
   if (registros.length) {
-    const asignaciones = CAMPOS_LIBRES.map((campo) => `${campo} = ?`).join(', ');
+    const asignaciones = columnasDisponibles.map((campo) => `${campo} = ?`).join(', ');
     const consultaActualizacion = `UPDATE ${tablaClib} SET ${asignaciones} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`;
     await ejecutarConsulta(db, consultaActualizacion, [...valores, claveDocumento.toUpperCase()]);
     return;
   }
 
-  const columnas = ['CLAVE_DOC', ...CAMPOS_LIBRES];
+  const columnas = ['CLAVE_DOC', ...columnasDisponibles];
   const marcadores = columnas.map(() => '?').join(', ');
   const consultaInsercion = `INSERT INTO ${tablaClib} (${columnas.join(', ')}) VALUES (${marcadores})`;
   await ejecutarConsulta(db, consultaInsercion, [claveDocumento.toUpperCase(), ...valores]);
@@ -540,11 +595,11 @@ function normalizarPartidas(partidas) {
   return Array.from(mapa.values());
 }
 
-function tieneInformacionEnCampos(campos) {
+function tieneInformacionEnCampos(campos, camposHabilitados = CAMPOS_LIBRES) {
   if (!campos || typeof campos !== 'object') {
     return false;
   }
-  return CAMPOS_LIBRES.some((campo) => {
+  return camposHabilitados.some((campo) => {
     const valor = campos[campo];
     // Considera que hay información si el valor existe y tiene contenido después de trim
     if (valor === null || valor === undefined) {
@@ -555,24 +610,27 @@ function tieneInformacionEnCampos(campos) {
   });
 }
 
-async function guardarCamposLibresPartidas(db, tablaPartidasClib, claveDocumento, partidas) {
+async function guardarCamposLibresPartidas(db, tablaPartidasClib, claveDocumento, partidas, columnasDisponibles = CAMPOS_LIBRES) {
+  if (!columnasDisponibles.length) {
+    return;
+  }
   const clave = claveDocumento.toUpperCase();
   await ejecutarConsulta(db, `DELETE FROM ${tablaPartidasClib} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`, [clave]);
   if (!partidas.length) {
     return;
   }
 
-  const partidasConDatos = partidas.filter((partida) => tieneInformacionEnCampos(partida.campos));
+  const partidasConDatos = partidas.filter((partida) => tieneInformacionEnCampos(partida.campos, columnasDisponibles));
   if (!partidasConDatos.length) {
     return;
   }
 
-  const columnas = ['CLAVE_DOC', 'NUM_PART', ...CAMPOS_LIBRES];
+  const columnas = ['CLAVE_DOC', 'NUM_PART', ...columnasDisponibles];
   const marcadoresInsercion = columnas.map(() => '?').join(', ');
   const consultaInsercion = `INSERT INTO ${tablaPartidasClib} (${columnas.join(', ')}) VALUES (${marcadoresInsercion})`;
 
   for (const partida of partidasConDatos) {
-    const valores = CAMPOS_LIBRES.map((campo) => partida.campos[campo]);
+    const valores = columnasDisponibles.map((campo) => partida.campos[campo]);
     await ejecutarConsulta(db, consultaInsercion, [clave, partida.numero, ...valores]);
   }
 }
