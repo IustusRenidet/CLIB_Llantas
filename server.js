@@ -67,7 +67,7 @@ aplicacion.get('/api/tipos-documento', (req, res) => {
 aplicacion.get('/api/documentos/buscar', asyncHandler(async (req, res) => {
   const definicion = obtenerDefinicionTipo(req.query.tipo);
   const empresa = normalizarEmpresa(req.query.empresa);
-  const termino = formatearTexto(req.query.termino || '');
+  const termino = limitarLongitudBusqueda(formatearTexto(req.query.termino || ''));
   const tablaDocumentos = `${definicion.tabla}${empresa}`;
 
   const resultados = await conConexion(async (db) => {
@@ -114,25 +114,42 @@ aplicacion.get('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
   const datos = await conConexion(async (db) => {
     const tablaDocumentos = `${definicion.tabla}${empresa}`;
     const tablaClib = `${definicion.tablaClib}${empresa}`;
-    const tablaPartidas = `${definicion.tablaPartidas}${empresa}`;
+    const tablaPartidasClib = `${definicion.tablaPartidas}_CLIB${empresa}`;
     const tablaParametros = `PARAM_CAMPOSLIBRES${empresa}`;
 
-    const existeDocumentos = await verificarTabla(db, tablaDocumentos);
-    const existeClib = await verificarTabla(db, tablaClib);
+    const [existeDocumentos, existeClib] = await Promise.all([
+      verificarTabla(db, tablaDocumentos),
+      verificarTabla(db, tablaClib)
+    ]);
+
     if (!existeDocumentos || !existeClib) {
       throw new AplicacionError('No se encontraron las tablas necesarias en la base de datos.', 404);
     }
 
-    const documento = await obtenerDocumento(db, tablaDocumentos, claveDocumento);
+    const [documento, camposLibres, etiquetas, definicionDocumento, partidasResultado, definicionPartidas] = await Promise.all([
+      obtenerDocumento(db, tablaDocumentos, claveDocumento),
+      obtenerCamposLibres(db, tablaClib, claveDocumento),
+      obtenerEtiquetasCampos(db, tablaParametros, definicion, empresa),
+      obtenerDefinicionCamposTabla(db, tablaClib),
+      obtenerPartidas(db, tablaPartidas, tablaPartidasClib, claveDocumento),
+      obtenerDefinicionCamposTabla(db, tablaPartidasClib)
+    ]);
+
     if (!documento) {
       throw new AplicacionError(`No existe el documento ${claveDocumento} en la empresa ${empresa}.`, 404);
     }
 
-    const camposLibres = await obtenerCamposLibres(db, tablaClib, claveDocumento);
-    const etiquetas = await obtenerEtiquetasCampos(db, tablaParametros, definicion, empresa);
-    const partidas = (await obtenerPartidas(db, tablaPartidas, claveDocumento)) || [];
-
-    return { documento, camposLibres, etiquetas, partidas };
+    return {
+      documento,
+      camposLibres,
+      etiquetas,
+      partidas: partidasResultado.partidas,
+      camposPartidasDisponibles: partidasResultado.camposDisponiblesPartidas,
+      definicionesCampos: {
+        documento: definicionDocumento.campos,
+        partidas: definicionPartidas.campos
+      }
+    };
   });
 
   res.json({ ok: true, ...datos });
@@ -144,33 +161,44 @@ aplicacion.put('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
   const claveDocumento = normalizarClaveDocumento(req.params.clave);
   const cuerpo = req.body || {};
   const camposRecibidos = cuerpo.campos;
+  const partidasRecibidas = Array.isArray(cuerpo.partidas) ? cuerpo.partidas : [];
 
   if (!camposRecibidos || typeof camposRecibidos !== 'object') {
     throw new AplicacionError('Es necesario enviar un objeto "campos" con los valores a guardar.');
   }
 
-  const camposNormalizados = {};
-  CAMPOS_LIBRES.forEach((campo) => {
-    const valor = camposRecibidos[campo];
-    camposNormalizados[campo] = valor === undefined || valor === null ? null : String(valor).trim();
-  });
-
   await conConexion(async (db) => {
     const tablaDocumentos = `${definicion.tabla}${empresa}`;
     const tablaClib = `${definicion.tablaClib}${empresa}`;
+    const tablaPartidas = `${definicion.tablaPartidas}${empresa}`;
+    const tablaPartidasClib = `${definicion.tablaPartidas}_CLIB${empresa}`;
 
-    const existeDocumentos = await verificarTabla(db, tablaDocumentos);
-    const existeClib = await verificarTabla(db, tablaClib);
+    const [existeDocumentos, existeClib] = await Promise.all([
+      verificarTabla(db, tablaDocumentos),
+      verificarTabla(db, tablaClib)
+    ]);
     if (!existeDocumentos || !existeClib) {
       throw new AplicacionError('No se encontraron las tablas necesarias en la base de datos.', 404);
     }
 
-    const documento = await obtenerDocumento(db, tablaDocumentos, claveDocumento);
+    const [documento, definicionDocumento, definicionPartidas] = await Promise.all([
+      obtenerDocumento(db, tablaDocumentos, claveDocumento),
+      obtenerDefinicionCamposTabla(db, tablaClib),
+      obtenerDefinicionCamposTabla(db, tablaPartidasClib)
+    ]);
+
     if (!documento) {
       throw new AplicacionError(`No existe el documento ${claveDocumento} en la empresa ${empresa}.`, 404);
     }
 
+    const camposNormalizados = normalizarCamposRecibidos(camposRecibidos, definicionDocumento, 'documento');
+    const partidasNormalizadas = normalizarPartidasRecibidas(partidasRecibidas, definicionPartidas);
+
     await guardarCamposLibres(db, tablaClib, claveDocumento, camposNormalizados);
+
+    if (partidasNormalizadas.length) {
+      await guardarCamposLibresPartidas(db, tablaPartidasClib, claveDocumento, partidasNormalizadas);
+    }
   });
 
   res.json({ ok: true, mensaje: 'Campos libres actualizados correctamente.' });
@@ -316,6 +344,52 @@ async function obtenerCamposLibres(db, tablaClib, claveDocumento) {
   return resultado;
 }
 
+async function obtenerDefinicionCamposTabla(db, nombreTabla) {
+  if (!nombreTabla) {
+    return { existe: false, campos: {} };
+  }
+  const tabla = nombreTabla.trim().toUpperCase();
+  const existe = await verificarTabla(db, tabla);
+  if (!existe) {
+    return { existe: false, campos: {} };
+  }
+
+  const marcadores = CAMPOS_LIBRES.map(() => '?').join(', ');
+  const consulta = `
+    SELECT TRIM(R.RDB$FIELD_NAME) AS CAMPO,
+           COALESCE(F.RDB$CHARACTER_LENGTH, R.RDB$FIELD_LENGTH, F.RDB$FIELD_LENGTH, 0) AS LONGITUD,
+           F.RDB$FIELD_TYPE AS TIPO,
+           F.RDB$FIELD_SUB_TYPE AS SUBTIPO,
+           F.RDB$FIELD_PRECISION AS PRECISION,
+           F.RDB$FIELD_SCALE AS ESCALA
+    FROM RDB$RELATION_FIELDS R
+    JOIN RDB$FIELDS F ON R.RDB$FIELD_SOURCE = F.RDB$FIELD_NAME
+    WHERE TRIM(UPPER(R.RDB$RELATION_NAME)) = ?
+      AND TRIM(UPPER(R.RDB$FIELD_NAME)) IN (${marcadores})
+  `;
+
+  const parametros = [tabla, ...CAMPOS_LIBRES.map((campo) => campo.toUpperCase())];
+  const registros = await ejecutarConsulta(db, consulta, parametros);
+  const campos = {};
+
+  registros.forEach((registro) => {
+    const clave = formatearTexto(registro.CAMPO).toUpperCase();
+    if (!clave) {
+      return;
+    }
+    const tipo = mapearTipoFirebird(Number(registro.TIPO), Number(registro.SUBTIPO), Number(registro.ESCALA));
+    const escala = normalizarEscala(Number(registro.ESCALA));
+    campos[clave] = {
+      tipo,
+      longitud: Number(registro.LONGITUD) || null,
+      precision: Number(registro.PRECISION) || null,
+      escala
+    };
+  });
+
+  return { existe: true, campos };
+}
+
 async function obtenerEtiquetasCampos(db, tablaParametros, definicion, empresa) {
   const existeTablaParametros = await verificarTabla(db, tablaParametros);
   if (!existeTablaParametros) {
@@ -353,21 +427,48 @@ async function obtenerEtiquetasCampos(db, tablaParametros, definicion, empresa) 
   return etiquetas;
 }
 
-async function obtenerPartidas(db, tablaPartidas, claveDocumento) {
-  const existe = await verificarTabla(db, tablaPartidas);
-  if (!existe) {
-    return [];
+async function obtenerPartidas(db, tablaPartidas, tablaPartidasClib, claveDocumento) {
+  const [existePartidas, camposDisponiblesPartidas] = await Promise.all([
+    verificarTabla(db, tablaPartidas),
+    verificarTabla(db, tablaPartidasClib)
+  ]);
+
+  const partidas = [];
+  if (existePartidas) {
+    const consulta = `SELECT CVE_DOC, NUM_PAR, CVE_ART, UNI_VENTA, CANT, PREC, TOT_PARTIDA FROM ${tablaPartidas} WHERE TRIM(UPPER(CVE_DOC)) = ? ORDER BY NUM_PAR`;
+    const registros = await ejecutarConsulta(db, consulta, [claveDocumento.toUpperCase()]);
+    registros.forEach((registro) => {
+      partidas.push({
+        numero: Number.parseInt(registro.NUM_PAR, 10) || 0,
+        articulo: formatearTexto(registro.CVE_ART),
+        unidad: formatearTexto(registro.UNI_VENTA),
+        cantidad: Number(registro.CANT) || 0,
+        precio: Number(registro.PREC) || 0,
+        total: Number(registro.TOT_PARTIDA) || 0
+      });
+    });
   }
-  const consulta = `SELECT CVE_DOC, NUM_PAR, CVE_ART, UNI_VENTA, CANT, PREC, TOT_PARTIDA FROM ${tablaPartidas} WHERE TRIM(UPPER(CVE_DOC)) = ? ORDER BY NUM_PAR`;
-  const registros = await ejecutarConsulta(db, consulta, [claveDocumento.toUpperCase()]);
-  return registros.map((registro) => ({
-    numero: Number.parseInt(registro.NUM_PAR, 10) || 0,
-    articulo: formatearTexto(registro.CVE_ART),
-    unidad: formatearTexto(registro.UNI_VENTA),
-    cantidad: Number(registro.CANT) || 0,
-    precio: Number(registro.PREC) || 0,
-    total: Number(registro.TOT_PARTIDA) || 0
+
+  const mapaCampos = new Map();
+  if (camposDisponiblesPartidas && partidas.length) {
+    const consultaCampos = `SELECT NUM_PART, ${CAMPOS_LIBRES.join(', ')} FROM ${tablaPartidasClib} WHERE TRIM(UPPER(CLAVE_DOC)) = ?`;
+    const registros = await ejecutarConsulta(db, consultaCampos, [claveDocumento.toUpperCase()]);
+    registros.forEach((registro) => {
+      const numero = Number.parseInt(registro.NUM_PART, 10) || 0;
+      const campos = {};
+      CAMPOS_LIBRES.forEach((campo) => {
+        campos[campo] = formatearTexto(registro[campo]);
+      });
+      mapaCampos.set(numero, campos);
+    });
+  }
+
+  const partidasConCampos = partidas.map((partida) => ({
+    ...partida,
+    camposLibres: mapaCampos.get(partida.numero) || null
   }));
+
+  return { partidas: partidasConCampos, camposDisponiblesPartidas };
 }
 
 async function guardarCamposLibres(db, tablaClib, claveDocumento, campos) {
@@ -388,8 +489,167 @@ async function guardarCamposLibres(db, tablaClib, claveDocumento, campos) {
   await ejecutarConsulta(db, consultaInsercion, [claveDocumento.toUpperCase(), ...valores]);
 }
 
+async function guardarCamposLibresPartidas(db, tablaPartidasClib, claveDocumento, partidas) {
+  if (!partidas || !partidas.length) {
+    return;
+  }
+
+  const existeTabla = await verificarTabla(db, tablaPartidasClib);
+  if (!existeTabla) {
+    throw new AplicacionError('No existen campos libres configurados para las partidas en esta empresa.');
+  }
+
+  for (const partida of partidas) {
+    const numero = Number.parseInt(partida.numero, 10);
+    if (!Number.isFinite(numero)) {
+      continue;
+    }
+    const valores = CAMPOS_LIBRES.map((campo) => partida.campos[campo]);
+    const condicion = 'WHERE TRIM(UPPER(CLAVE_DOC)) = ? AND NUM_PART = ?';
+    const consultaExistencia = `SELECT FIRST 1 NUM_PART FROM ${tablaPartidasClib} ${condicion}`;
+    const registros = await ejecutarConsulta(db, consultaExistencia, [claveDocumento.toUpperCase(), numero]);
+    if (registros.length) {
+      const asignaciones = CAMPOS_LIBRES.map((campo) => `${campo} = ?`).join(', ');
+      const consultaActualizacion = `UPDATE ${tablaPartidasClib} SET ${asignaciones} ${condicion}`;
+      await ejecutarConsulta(db, consultaActualizacion, [...valores, claveDocumento.toUpperCase(), numero]);
+      continue;
+    }
+    const columnas = ['CLAVE_DOC', 'NUM_PART', ...CAMPOS_LIBRES];
+    const marcadores = columnas.map(() => '?').join(', ');
+    const consultaInsercion = `INSERT INTO ${tablaPartidasClib} (${columnas.join(', ')}) VALUES (${marcadores})`;
+    await ejecutarConsulta(db, consultaInsercion, [claveDocumento.toUpperCase(), numero, ...valores]);
+  }
+}
+
+function normalizarCamposRecibidos(valores, definicionTabla, seccion) {
+  const resultado = {};
+  const definiciones = (definicionTabla && definicionTabla.campos) || {};
+  CAMPOS_LIBRES.forEach((campo) => {
+    const valor = valores ? valores[campo] : undefined;
+    resultado[campo] = normalizarValorCampo(valor, definiciones[campo], campo, seccion);
+  });
+  return resultado;
+}
+
+function normalizarPartidasRecibidas(lista, definicionTabla) {
+  if (!Array.isArray(lista) || !lista.length) {
+    return [];
+  }
+  if (!definicionTabla || !definicionTabla.existe) {
+    throw new AplicacionError('La empresa no tiene campos libres configurados para las partidas.');
+  }
+
+  return lista.map((partida) => {
+    const numero = Number.parseInt(partida && partida.numero, 10);
+    if (!Number.isFinite(numero) || numero < 1) {
+      throw new AplicacionError('Cada partida debe incluir un número válido.');
+    }
+    const campos = normalizarCamposRecibidos(partida.campos || {}, definicionTabla, `partida ${numero}`);
+    return { numero, campos };
+  });
+}
+
+function normalizarValorCampo(valor, definicionCampo, clave, seccion) {
+  if (valor === undefined || valor === null) {
+    return null;
+  }
+  const texto = formatearTexto(valor);
+  if (!texto) {
+    return null;
+  }
+  const tipo = (definicionCampo && definicionCampo.tipo) || 'text';
+
+  if (tipo === 'integer') {
+    const numero = Number(texto);
+    if (!Number.isFinite(numero) || !Number.isInteger(numero)) {
+      throw new AplicacionError(`El campo ${crearMensajeCampo(clave, seccion)} requiere un número entero.`);
+    }
+    return numero;
+  }
+
+  if (tipo === 'decimal' || tipo === 'numeric') {
+    const numero = Number(texto.replace(',', '.'));
+    if (!Number.isFinite(numero)) {
+      throw new AplicacionError(`El campo ${crearMensajeCampo(clave, seccion)} requiere un número decimal.`);
+    }
+    const escala = (definicionCampo && Number(definicionCampo.escala)) || 0;
+    if (escala > 0) {
+      const factor = 10 ** escala;
+      return Math.round(numero * factor) / factor;
+    }
+    return numero;
+  }
+
+  if (tipo === 'date' || tipo === 'time' || tipo === 'timestamp') {
+    const fecha = new Date(texto);
+    if (Number.isNaN(fecha.getTime())) {
+      throw new AplicacionError(`El campo ${crearMensajeCampo(clave, seccion)} requiere una fecha válida.`);
+    }
+    return fecha;
+  }
+
+  const longitudMaxima = (definicionCampo && Number(definicionCampo.longitud)) || 255;
+  if (texto.length > longitudMaxima) {
+    throw new AplicacionError(
+      `El campo ${crearMensajeCampo(clave, seccion)} no puede superar ${longitudMaxima} caracteres.`
+    );
+  }
+  return texto;
+}
+
+function crearMensajeCampo(clave, seccion) {
+  return seccion ? `${clave} (${seccion})` : clave;
+}
+
+function mapearTipoFirebird(tipo, _subTipo, escala) {
+  const escalaNormalizada = normalizarEscala(escala);
+  switch (tipo) {
+    case 7:
+    case 8:
+    case 16:
+      return escalaNormalizada > 0 ? 'decimal' : 'integer';
+    case 10:
+    case 11:
+    case 27:
+      return 'decimal';
+    case 12:
+      return 'date';
+    case 13:
+      return 'time';
+    case 35:
+      return 'timestamp';
+    case 14:
+    case 37:
+    case 40:
+      return 'text';
+    case 261:
+      return 'blob';
+    default:
+      return 'text';
+  }
+}
+
+function normalizarEscala(escala) {
+  if (!Number.isFinite(escala)) {
+    return 0;
+  }
+  const valor = Number(escala);
+  return valor < 0 ? Math.abs(valor) : valor;
+}
+
 function crearMapaEtiquetas() {
   return { documento: {}, partidas: {} };
+}
+
+function limitarLongitudBusqueda(texto) {
+  if (!texto) {
+    return '';
+  }
+  const cadena = texto.toString().trim();
+  if (cadena.length <= 30) {
+    return cadena;
+  }
+  return cadena.slice(0, 30);
 }
 
 function normalizarIdentificadorTabla(valor) {
