@@ -833,24 +833,15 @@ body {
   color: var(--color-texto);
 }
 
-.partida-campos__lista {
+.partida-campos__campos {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  gap: 0.4rem 1rem;
-  margin: 0.5rem 0 0;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 0.75rem 1rem;
+  margin-top: 0.75rem;
 }
 
-.partida-campos__lista dt {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-texto-suave);
-}
-
-.partida-campos__lista dd {
-  margin: 0 0 0.4rem;
-  font-weight: 600;
-  color: var(--color-texto);
+.campo-libre--partida input {
+  width: 100%;
 }
 
 .toast-container {
