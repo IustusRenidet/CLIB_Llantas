@@ -114,6 +114,7 @@ aplicacion.get('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
   const datos = await conConexion(async (db) => {
     const tablaDocumentos = `${definicion.tabla}${empresa}`;
     const tablaClib = `${definicion.tablaClib}${empresa}`;
+    const tablaPartidas = `${definicion.tablaPartidas}${empresa}`;
     const tablaPartidasClib = `${definicion.tablaPartidas}_CLIB${empresa}`;
     const tablaParametros = `PARAM_CAMPOSLIBRES${empresa}`;
 
