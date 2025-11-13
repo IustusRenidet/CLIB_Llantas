@@ -391,6 +391,8 @@ async function verificarTabla(db, nombreTabla) {
   return existe;
 }
 
+
+
 async function obtenerDocumento(db, tablaDocumentos, claveDocumento) {
   const consulta =
     `SELECT FIRST 1 CVE_DOC, CVE_CLPV, FECHA_DOC FROM ${tablaDocumentos} WHERE TRIM(UPPER(CVE_DOC)) = ? AND ${CONDICION_DOCUMENTO_VIGENTE}`;
@@ -544,7 +546,12 @@ function tieneInformacionEnCampos(campos) {
   }
   return CAMPOS_LIBRES.some((campo) => {
     const valor = campos[campo];
-    return valor !== null && valor !== '';
+    // Considera que hay información si el valor existe y tiene contenido después de trim
+    if (valor === null || valor === undefined) {
+      return false;
+    }
+    const texto = String(valor).trim();
+    return texto.length > 0;
   });
 }
 

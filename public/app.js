@@ -583,15 +583,20 @@ async function guardarCampos(evento) {
 
   const partidas = [];
   if (camposPartidasDisponibles && elementos.listaCamposPartidas) {
-    elementos.listaCamposPartidas.querySelectorAll('[data-numero-partida]').forEach((contenedor) => {
+    // Agrupa por contenedor de partida en lugar de por input individual
+    const contenedoresPartida = elementos.listaCamposPartidas.querySelectorAll('.partida-campos');
+    contenedoresPartida.forEach((contenedor) => {
       const numero = Number.parseInt(contenedor.dataset.numeroPartida, 10);
       if (Number.isNaN(numero)) {
         return;
       }
+      
       const camposPartida = {};
-      contenedor.querySelectorAll('[data-clave-campo]').forEach((input) => {
+      // Busca inputs dentro de este contenedor específico
+      contenedor.querySelectorAll('input[data-clave-campo]').forEach((input) => {
         camposPartida[input.dataset.claveCampo] = input.value.trim();
       });
+      
       partidas.push({ numero, campos: camposPartida });
     });
   }
