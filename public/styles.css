@@ -766,6 +766,11 @@ body {
   padding: 0.6rem 0.75rem;
 }
 
+.campo-libre__ayuda {
+  color: var(--color-texto-suave);
+  font-size: 0.78rem;
+}
+
 .acciones-formulario {
   display: flex;
   align-items: center;

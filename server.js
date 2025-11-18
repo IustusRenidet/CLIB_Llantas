@@ -219,17 +219,29 @@ aplicacion.get('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
     }
 
     const camposDisponiblesDocumento = existeClib ? await obtenerCamposDisponiblesEnTabla(db, tablaClib) : [];
-    const camposLibres = camposDisponiblesDocumento.length ? await obtenerCamposLibres(db, tablaClib, claveDocumento, camposDisponiblesDocumento) : {};
+    const detallesCamposDocumento = camposDisponiblesDocumento.length
+      ? await obtenerMetadatosCamposLibres(db, tablaClib, camposDisponiblesDocumento)
+      : [];
+    const camposLibres = camposDisponiblesDocumento.length
+      ? await obtenerCamposLibres(db, tablaClib, claveDocumento, camposDisponiblesDocumento)
+      : {};
     const etiquetas = await obtenerEtiquetasCampos(db, tablaParametros, definicion, empresa);
-    const { partidas, camposDisponiblesPartidas } = await obtenerPartidas(db, tablaPartidas, tablaPartidasClib, claveDocumento);
+    const { partidas, camposDisponiblesPartidas, detallesCamposPartidas } = await obtenerPartidas(
+      db,
+      tablaPartidas,
+      tablaPartidasClib,
+      claveDocumento
+    );
 
     return {
       documento,
       camposLibres,
       etiquetas,
       camposDisponiblesDocumento,
+      detallesCamposDocumento,
       partidas,
-      camposPartidasDisponibles: camposDisponiblesPartidas
+      camposPartidasDisponibles: camposDisponiblesPartidas,
+      detallesCamposPartidas
     };
   });
 
@@ -267,7 +279,12 @@ aplicacion.put('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
     if (existeClib) {
       const camposDisponiblesDocumento = await obtenerCamposDisponiblesEnTabla(db, tablaClib);
       if (camposDisponiblesDocumento.length) {
-        const camposNormalizados = normalizarCamposLibres(camposRecibidos, camposDisponiblesDocumento);
+        const longitudesDocumento = await obtenerLongitudesCamposLibres(db, tablaClib, camposDisponiblesDocumento);
+        const camposNormalizados = normalizarCamposLibres(
+          camposRecibidos,
+          camposDisponiblesDocumento,
+          longitudesDocumento
+        );
         await guardarCamposLibres(db, tablaClib, claveDocumento, camposNormalizados, camposDisponiblesDocumento);
       }
     }
@@ -280,7 +297,8 @@ aplicacion.put('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
       if (!camposDisponiblesPartidas.length) {
         throw new AplicacionError('No existen campos libres configurados para las partidas en esta empresa.', 404);
       }
-      const partidasNormalizadas = normalizarPartidas(partidasRecibidas, camposDisponiblesPartidas);
+      const longitudesPartidas = await obtenerLongitudesCamposLibres(db, tablaPartidasClib, camposDisponiblesPartidas);
+      const partidasNormalizadas = normalizarPartidas(partidasRecibidas, camposDisponiblesPartidas, longitudesPartidas);
       await guardarCamposLibresPartidas(
         db,
         tablaPartidasClib,
@@ -432,6 +450,93 @@ async function obtenerCamposDisponiblesEnTabla(db, nombreTabla) {
   return campos;
 }
 
+async function obtenerLongitudesCamposLibres(db, nombreTabla, camposDisponibles = []) {
+  const metadatos = await obtenerMetadatosCamposLibres(db, nombreTabla, camposDisponibles);
+  const mapa = new Map();
+  metadatos.forEach((registro) => {
+    mapa.set(registro.campo, registro.longitudMaxima ?? null);
+  });
+  return mapa;
+}
+
+async function obtenerMetadatosCamposLibres(db, nombreTabla, camposDisponibles = []) {
+  const tabla = normalizarIdentificadorTabla(nombreTabla);
+  if (!tabla || !camposDisponibles.length) {
+    return [];
+  }
+
+  const consulta = `
+    SELECT
+      TRIM(UPPER(rf.RDB$FIELD_NAME)) AS CAMPO,
+      COALESCE(f.RDB$CHARACTER_LENGTH, 0) AS LONGITUD,
+      COALESCE(f.RDB$FIELD_TYPE, -1) AS TIPO,
+      COALESCE(f.RDB$FIELD_SUB_TYPE, 0) AS SUBTIPO,
+      COALESCE(f.RDB$FIELD_PRECISION, 0) AS PRECISION,
+      COALESCE(f.RDB$FIELD_SCALE, 0) AS ESCALA
+    FROM RDB$RELATION_FIELDS rf
+    JOIN RDB$FIELDS f ON rf.RDB$FIELD_SOURCE = f.RDB$FIELD_NAME
+    WHERE TRIM(UPPER(rf.RDB$RELATION_NAME)) = ?
+      AND TRIM(UPPER(rf.RDB$FIELD_NAME)) LIKE '${PREFIJO_CAMPOS_LIBRES}%'
+  `;
+
+  const registros = await ejecutarConsulta(db, consulta, [tabla]);
+  return registros
+    .map((registro) => {
+      const campo = normalizarIdentificadorCampoLibre(registro.CAMPO);
+      if (!campo || !camposDisponibles.includes(campo)) {
+        return null;
+      }
+      const longitud = Number.parseInt(registro.LONGITUD, 10);
+      return {
+        campo,
+        longitudMaxima: Number.isFinite(longitud) && longitud > 0 ? longitud : null,
+        tipo: describirTipoDato(registro.TIPO, registro.SUBTIPO, registro.PRECISION, registro.ESCALA)
+      };
+    })
+    .filter(Boolean);
+}
+
+function describirTipoDato(tipo, subTipo, precision, escala) {
+  const tipoEntero = Number.parseInt(tipo, 10);
+  const escalaEntera = Number.parseInt(escala, 10);
+  switch (tipoEntero) {
+    case 7:
+      return 'SMALLINT';
+    case 8:
+      return 'INTEGER';
+    case 10:
+      return 'FLOAT';
+    case 12:
+      return 'DATE';
+    case 13:
+      return 'TIME';
+    case 14:
+      return 'CHAR';
+    case 16:
+      return escalaEntera < 0 ? 'NUMERIC' : 'BIGINT';
+    case 27:
+      return 'DOUBLE';
+    case 35:
+      return 'TIMESTAMP';
+    case 37:
+      return 'VARCHAR';
+    case 40:
+      return 'CSTRING';
+    case 45:
+      return 'BIGINT';
+    case 261:
+      return 'BLOB';
+    default:
+      if (tipoEntero === 9 && Number.parseInt(subTipo, 10) === 1) {
+        return 'NUMERIC';
+      }
+      if (tipoEntero === 9) {
+        return 'DECIMAL';
+      }
+      return 'DESCONOCIDO';
+  }
+}
+
 
 
 async function obtenerDocumento(db, tablaDocumentos, claveDocumento) {
@@ -519,10 +624,12 @@ async function obtenerPartidas(db, tablaPartidas, tablaPartidasClib, claveDocume
   }
 
   let camposDisponiblesPartidas = [];
+  let detallesCamposPartidas = [];
   if (tablaPartidasClib) {
     const existeTablaClib = await verificarTabla(db, tablaPartidasClib);
     if (existeTablaClib) {
       camposDisponiblesPartidas = await obtenerCamposDisponiblesEnTabla(db, tablaPartidasClib);
+      detallesCamposPartidas = await obtenerMetadatosCamposLibres(db, tablaPartidasClib, camposDisponiblesPartidas);
     }
   }
 
@@ -545,7 +652,7 @@ async function obtenerPartidas(db, tablaPartidas, tablaPartidasClib, claveDocume
     camposLibres: mapaCampos.get(partida.numero) || null
   }));
 
-  return { partidas: partidasConCampos, camposDisponiblesPartidas };
+  return { partidas: partidasConCampos, camposDisponiblesPartidas, detallesCamposPartidas };
 }
 
 async function guardarCamposLibres(db, tablaClib, claveDocumento, campos, columnasDisponibles = []) {
@@ -569,7 +676,7 @@ async function guardarCamposLibres(db, tablaClib, claveDocumento, campos, column
   await ejecutarConsulta(db, consultaInsercion, [claveDocumento.toUpperCase(), ...valores]);
 }
 
-function normalizarCamposLibres(camposOrigen = {}, camposDisponibles = []) {
+function normalizarCamposLibres(camposOrigen = {}, camposDisponibles = [], longitudes = new Map()) {
   const resultado = {};
   if (!camposDisponibles.length) {
     return resultado;
@@ -577,12 +684,13 @@ function normalizarCamposLibres(camposOrigen = {}, camposDisponibles = []) {
   camposDisponibles.forEach((campo) => {
     const valor = camposOrigen && Object.prototype.hasOwnProperty.call(camposOrigen, campo) ? camposOrigen[campo] : '';
     const texto = valor === undefined || valor === null ? '' : String(valor).trim();
-    resultado[campo] = texto ? texto : null;
+    const textoLimitado = limitarLongitudCampoLibre(texto, longitudes.get(campo));
+    resultado[campo] = textoLimitado ? textoLimitado : null;
   });
   return resultado;
 }
 
-function normalizarPartidas(partidas, camposDisponibles = []) {
+function normalizarPartidas(partidas, camposDisponibles = [], longitudes = new Map()) {
   if (!Array.isArray(partidas) || !camposDisponibles.length) {
     return [];
   }
@@ -596,10 +704,17 @@ function normalizarPartidas(partidas, camposDisponibles = []) {
       return;
     }
     const camposOrigen = partida.campos && typeof partida.campos === 'object' ? partida.campos : {};
-    const campos = normalizarCamposLibres(camposOrigen, camposDisponibles);
+    const campos = normalizarCamposLibres(camposOrigen, camposDisponibles, longitudes);
     mapa.set(numero, { numero, campos });
   });
   return Array.from(mapa.values());
+}
+
+function limitarLongitudCampoLibre(texto, longitudMaxima) {
+  if (!texto || !Number.isFinite(longitudMaxima) || longitudMaxima <= 0) {
+    return texto;
+  }
+  return texto.length > longitudMaxima ? texto.slice(0, longitudMaxima) : texto;
 }
 
 function tieneInformacionEnCampos(campos, camposHabilitados = []) {

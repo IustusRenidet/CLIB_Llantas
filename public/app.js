@@ -45,6 +45,8 @@ let temporizadorGuardado = null;
 let temporizadorBusqueda = null;
 let camposDocumentoDisponibles = [];
 let camposPartidasDisponibles = [];
+let metadatosCamposDocumento = new Map();
+let metadatosCamposPartidas = new Map();
 let resolverModalConfirmacion = null;
 let ultimoElementoEnfoque = null;
 let temporizadorOcultarModal = null;
@@ -161,6 +163,8 @@ async function cargarDocumento(registro) {
     etiquetasCampos = crearEstructuraEtiquetas(datos.etiquetas);
     camposDocumentoDisponibles = obtenerCamposDocumentoDisponibles(datos);
     camposPartidasDisponibles = obtenerCamposPartidasDisponibles(datos);
+    metadatosCamposDocumento = construirMapaMetadatos(datos.detallesCamposDocumento);
+    metadatosCamposPartidas = construirMapaMetadatos(datos.detallesCamposPartidas);
     elementos.descripcionDocumento.textContent = `${datos.documento.descripcion}.`;
     elementos.resumenDocumento.hidden = false;
     elementos.detalleClave.textContent = datos.documento.cveDoc;
@@ -213,9 +217,20 @@ function pintarCamposLibres(campos = {}) {
     entrada.type = 'text';
     entrada.value = campos[clave] || '';
     entrada.dataset.claveCampo = clave;
-    entrada.maxLength = 100;
+    const metadatos = metadatosCamposDocumento.get(clave);
+    const longitudMaxima = metadatos && metadatos.longitudMaxima ? metadatos.longitudMaxima : 0;
+    if (longitudMaxima > 0) {
+      entrada.maxLength = longitudMaxima;
+    } else {
+      entrada.removeAttribute('maxLength');
+    }
     entrada.addEventListener('input', marcarCambiosPendientes);
     campo.appendChild(entrada);
+
+    const textoAyuda = crearTextoAyudaCampoLibre(metadatos);
+    if (textoAyuda) {
+      campo.appendChild(textoAyuda);
+    }
 
     lista.appendChild(campo);
   });
@@ -293,9 +308,20 @@ function pintarCamposLibresPartidas(partidas = []) {
       input.value = partida.camposLibres && partida.camposLibres[clave] ? partida.camposLibres[clave] : '';
       input.dataset.claveCampo = clave;
       input.dataset.numeroPartida = partida.numero;
-      input.maxLength = 100;
+      const metadatos = metadatosCamposPartidas.get(clave);
+      const longitudMaxima = metadatos && metadatos.longitudMaxima ? metadatos.longitudMaxima : 0;
+      if (longitudMaxima > 0) {
+        input.maxLength = longitudMaxima;
+      } else {
+        input.removeAttribute('maxLength');
+      }
       input.addEventListener('input', marcarCambiosPendientes);
       campo.appendChild(input);
+
+      const textoAyuda = crearTextoAyudaCampoLibre(metadatos);
+      if (textoAyuda) {
+        campo.appendChild(textoAyuda);
+      }
 
       lista.appendChild(campo);
     });
@@ -588,6 +614,26 @@ function formatoDinero(valor) {
   });
 }
 
+function crearTextoAyudaCampoLibre(metadatos) {
+  if (!metadatos || (!metadatos.longitudMaxima && !metadatos.tipo)) {
+    return null;
+  }
+  const mensajes = [];
+  if (metadatos.longitudMaxima) {
+    mensajes.push(`Máx. ${metadatos.longitudMaxima} caracteres`);
+  }
+  if (metadatos.tipo) {
+    mensajes.push(`Tipo: ${metadatos.tipo}`);
+  }
+  if (!mensajes.length) {
+    return null;
+  }
+  const ayuda = document.createElement('small');
+  ayuda.className = 'campo-libre__ayuda';
+  ayuda.textContent = mensajes.join(' · ');
+  return ayuda;
+}
+
 async function guardarCampos(evento) {
   evento.preventDefault();
   if (!documentoSeleccionado) {
@@ -700,6 +746,28 @@ function normalizarCamposDisponibles(lista) {
     campos.push(clave);
   });
   return campos;
+}
+
+function construirMapaMetadatos(lista = []) {
+  const mapa = new Map();
+  if (!Array.isArray(lista)) {
+    return mapa;
+  }
+  lista.forEach((item) => {
+    if (!item || !item.campo) {
+      return;
+    }
+    const clave = item.campo.toString().trim().toUpperCase();
+    if (!REGEX_CAMPO_LIBRE.test(clave)) {
+      return;
+    }
+    const longitud = Number(item.longitudMaxima);
+    mapa.set(clave, {
+      longitudMaxima: Number.isFinite(longitud) ? longitud : null,
+      tipo: item.tipo || null
+    });
+  });
+  return mapa;
 }
 
 function mostrarToast(texto, tipo = 'info') {
