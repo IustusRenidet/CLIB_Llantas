@@ -59,8 +59,12 @@ La SPA incluida en `public/` consume estas rutas para mostrar y editar la inform
 ## Descargar versión compilada
 
 Puedes descargar la última versión compilada desde la sección de [Releases](https://github.com/IustusRenidet/CLIB_Llantas/releases) de GitHub. Disponibles:
-- **Instalador NSIS**: Para instalar la aplicación en tu sistema Windows
-- **Versión portable**: Para ejecutar sin instalación
+- **Instalador NSIS**: Para instalar la aplicación en tu sistema Windows (incluye actualizaciones automáticas)
+- **Versión portable**: Para ejecutar sin instalación (sin actualizaciones automáticas)
+
+### Actualizaciones Automáticas
+
+Si instalas la aplicación usando el instalador NSIS, recibirás notificaciones automáticas cuando haya nuevas versiones disponibles. La aplicación se actualizará sin necesidad de descargar manualmente.
 
 ## Compilar desde código fuente
 

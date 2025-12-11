@@ -79,6 +79,31 @@ Si el archivo `.github/workflows/release.yml` existe, el proceso está automatiz
    - Creará la release
    - Subirá los instaladores
 
+## Actualizaciones Automáticas
+
+La aplicación incluye un sistema de actualizaciones automáticas usando `electron-updater`:
+
+### Cómo Funciona
+
+1. **Al iniciar la aplicación**: Después de 3 segundos, la app verifica si hay una nueva versión disponible en GitHub Releases
+2. **Notificación**: Si hay una actualización, aparece un diálogo preguntando si deseas descargarla
+3. **Descarga**: Se descarga en segundo plano con barra de progreso
+4. **Instalación**: Al terminar, puedes reiniciar inmediatamente o esperar al cerrar la aplicación
+
+### Requisitos para Actualizaciones Automáticas
+
+- La aplicación debe estar instalada con el instalador NSIS (no funciona con versión portable)
+- Debe haber una release publicada en GitHub con los archivos y el archivo `latest.yml`
+- La versión de la release debe ser mayor que la versión instalada
+
+### Para los Usuarios
+
+Los usuarios no necesitan hacer nada especial. La aplicación:
+- Verifica automáticamente al iniciar
+- Muestra un diálogo amigable cuando hay actualizaciones
+- Permite elegir cuándo instalar (ahora o al cerrar)
+- Muestra el progreso de la descarga en la barra de tareas
+
 ## Notas de Versión
 
 Al crear una release, incluye:
