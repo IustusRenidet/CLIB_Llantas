@@ -1,5 +1,14 @@
 const { app, BrowserWindow } = require('electron');
 const { iniciarServidor, detenerServidor, PUERTO_SERVIDOR } = require('./server');
+const path = require('path');
+
+// Permitir múltiples instancias
+app.requestSingleInstanceLock = () => false;
+
+// Aislar el perfil de cada instancia con un ID único
+const instanceId = Date.now() + '-' + Math.random().toString(36).substr(2, 9);
+const userDataPath = path.join(app.getPath('userData'), 'instances', instanceId);
+app.setPath('userData', userDataPath);
 
 let ventanaPrincipal = null;
 
