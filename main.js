@@ -1,4 +1,4 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, dialog } = require('electron');
 const { autoUpdater } = require('electron-updater');
 const { iniciarServidor, detenerServidor, PUERTO_SERVIDOR } = require('./server');
 const path = require('path');
@@ -78,9 +78,8 @@ autoUpdater.on('checking-for-update', () => {
 
 autoUpdater.on('update-available', (info) => {
   console.log('Actualización disponible:', info.version);
-  const { dialog } = require('electron');
   
-  dialog.showMessageBox(ventanaPrincipal, {
+  dialog.showMessageBox(ventanaPrincipal || null, {
     type: 'info',
     title: 'Actualización disponible',
     message: `Nueva versión ${info.version} disponible`,
@@ -117,8 +116,7 @@ autoUpdater.on('update-downloaded', (info) => {
     ventanaPrincipal.setProgressBar(-1); // Remover barra de progreso
   }
   
-  const { dialog } = require('electron');
-  dialog.showMessageBox(ventanaPrincipal, {
+  dialog.showMessageBox(ventanaPrincipal || null, {
     type: 'info',
     title: 'Actualización lista',
     message: 'La actualización se ha descargado correctamente',
