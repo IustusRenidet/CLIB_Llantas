@@ -55,3 +55,24 @@ Electron levanta el mismo servidor web en el puerto 3001 y carga la interfaz en 
 | GET    | `/api/estado`                                 | Comprobación rápida del backend                            |
 
 La SPA incluida en `public/` consume estas rutas para mostrar y editar la información.
+
+## Descargar versión compilada
+
+Puedes descargar la última versión compilada desde la sección de [Releases](https://github.com/IustusRenidet/CLIB_Llantas/releases) de GitHub. Disponibles:
+- **Instalador NSIS**: Para instalar la aplicación en tu sistema Windows
+- **Versión portable**: Para ejecutar sin instalación
+
+## Compilar desde código fuente
+
+Para generar los instaladores de Windows:
+
+```bash
+npm install
+npm run dist
+```
+
+Los archivos se generarán en la carpeta `dist/`.
+
+## Crear una nueva release
+
+Si eres un desarrollador y quieres crear una nueva versión, consulta el archivo [RELEASES.md](RELEASES.md) para instrucciones detalladas sobre el proceso de release.
