@@ -31,6 +31,8 @@ Esto creará en la carpeta `dist/`:
 - `CLIB Ventas-X.Y.Z-setup.exe` - Instalador NSIS
 - `CLIB Ventas-X.Y.Z-x64.exe` - Versión portable
 
+**Nota**: Los nombres de archivo contienen espacios. Al usar la línea de comandos, escapa los espacios con `\` (ejemplo: `CLIB\ Ventas-1.0.4-setup.exe`).
+
 ### 3. Publicar en GitHub
 
 #### Opción A: Usando la Interfaz Web de GitHub
