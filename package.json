@@ -1,6 +1,6 @@
 {
   "name": "clib_llantas",
-  "version": "1.0.3",
+  "version": "1.0.4",
   "description": "Campos libres de docs de ventas para Llantas",
   "main": "main.js",
   "author": "Rintel Gatachi <iustusrenidet@gmail.com>",
@@ -22,7 +22,8 @@
   "build": {
     "asar": true,
     "asarUnpack": [
-      "**/*.node"
+      "**/*.node",
+      "public/**/*"
     ],
     "appId": "com.iconet.clib_llantas",
     "productName": "CLIB Ventas",
@@ -53,6 +54,7 @@
     },
     "nsis": {
       "oneClick": false,
+      "perMachine": false,
       "allowToChangeInstallationDirectory": true,
       "artifactName": "${productName}-${version}-setup.${ext}"
     }

@@ -3,6 +3,16 @@ const path = require('path');
 const fs = require('fs');
 const firebird = require('node-firebird');
 
+// Función para obtener la ruta correcta de archivos, manejando empaquetado asar
+function obtenerRutaRecurso(rutaRelativa) {
+  // Si __dirname contiene .asar, usa la versión desempaquetada
+  if (__dirname.includes('.asar')) {
+    const rutaBase = __dirname.replace('app.asar', 'app.asar.unpacked');
+    return path.join(rutaBase, rutaRelativa);
+  }
+  return path.join(__dirname, rutaRelativa);
+}
+
 const TIPOS_DOCUMENTO = {
   F: {
     clave: 'F',
@@ -140,7 +150,7 @@ let servidorHttp = null;
 
 aplicacion.disable('x-powered-by');
 aplicacion.use(express.json({ limit: '1mb' }));
-aplicacion.use(express.static(path.join(__dirname, 'public')));
+aplicacion.use(express.static(obtenerRutaRecurso('public')));
 
 aplicacion.get('/api/tipos-documento', (req, res) => {
   res.json({
@@ -320,7 +330,7 @@ aplicacion.use('/api', (req, res) => {
 });
 
 aplicacion.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  res.sendFile(obtenerRutaRecurso(path.join('public', 'index.html')));
 });
 
 function asyncHandler(funcion) {
