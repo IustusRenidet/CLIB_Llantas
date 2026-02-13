@@ -3,11 +3,21 @@
   "version": "1.0.4",
   "description": "Campos libres de docs de ventas para Llantas",
   "main": "main.js",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/IustusRenidet/CLIB_Llantas.git"
+  },
   "author": "Rintel Gatachi <iustusrenidet@gmail.com>",
   "scripts": {
     "start": "electron .",
     "dist": "electron-builder --win",
-    "web": "node server.js"
+    "web": "node server.js",
+    "release:patch": "npm version patch -m \"chore(release): %s\"",
+    "release:minor": "npm version minor -m \"chore(release): %s\"",
+    "release:major": "npm version major -m \"chore(release): %s\"",
+    "release:push": "git push && git push --follow-tags",
+    "publish:local": "npm run dist",
+    "publish:github": "electron-builder --win --publish always"
   },
   "dependencies": {
     "bootstrap": "^5.3.3",
@@ -23,6 +33,13 @@
     "asar": true,
     "asarUnpack": [
       "**/*.node"
+    ],
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "IustusRenidet",
+        "repo": "CLIB_Llantas"
+      }
     ],
     "appId": "com.iconet.clib_llantas",
     "productName": "CLIB Ventas",

@@ -125,14 +125,13 @@ const LONGITUD_MAXIMA_BUSQUEDA_GENERAL = 30;
 const LONGITUD_MAXIMA_CVE_DOC = 20;
 const LONGITUD_MAXIMA_CVE_CLIENTE = 10;
 const CONDICION_DOCUMENTO_VIGENTE = "TRIM(COALESCE(STATUS, '')) <> 'C'";
+const EMPRESA_POR_DEFECTO = '01';
+const EMPRESAS_DISPONIBLES = [
+  { clave: '01', nombre: 'Llantas y Multiservicios' },
+  { clave: '02', nombre: 'CAFCAM' }
+];
 const PUERTO_PREFERIDO = Number(process.env.PORT || 3001);
-const RUTA_BASE_DATOS = obtenerRutaBaseDatos();
-const CONFIGURACION_FIREBIRD = {
-  host: process.env.FIREBIRD_HOST || '127.0.0.1',
-  port: Number(process.env.FIREBIRD_PORT || 3050),
-  database: RUTA_BASE_DATOS,
-  user: process.env.FIREBIRD_USER || 'SYSDBA',
-  password: process.env.FIREBIRD_PASSWORD || 'masterkey',
+const CONFIGURACION_FIREBIRD_BASE = {
   lowercase_keys: false,
   role: null,
   pageSize: 4096
@@ -155,13 +154,21 @@ aplicacion.get('/api/tipos-documento', (req, res) => {
   });
 });
 
+aplicacion.get('/api/empresas', (req, res) => {
+  res.json({
+    ok: true,
+    empresaPorDefecto: EMPRESA_POR_DEFECTO,
+    empresas: EMPRESAS_DISPONIBLES
+  });
+});
+
 aplicacion.get('/api/documentos/buscar', asyncHandler(async (req, res) => {
   const definicion = obtenerDefinicionTipo(req.query.tipo);
   const empresa = normalizarEmpresa(req.query.empresa);
   const termino = limitarLongitudBusqueda(formatearTexto(req.query.termino || ''), LONGITUD_MAXIMA_BUSQUEDA_GENERAL);
   const tablaDocumentos = `${definicion.tabla}${empresa}`;
 
-  const resultados = await conConexion(async (db) => {
+  const resultados = await conConexion(empresa, async (db) => {
     const existeTabla = await verificarTabla(db, tablaDocumentos);
     if (!existeTabla) {
       throw new AplicacionError(`La tabla ${tablaDocumentos} no existe en la base de datos.`, 404);
@@ -206,7 +213,7 @@ aplicacion.get('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
   const empresa = normalizarEmpresa(req.params.empresa);
   const claveDocumento = normalizarClaveDocumento(req.params.clave);
 
-  const datos = await conConexion(async (db) => {
+  const datos = await conConexion(empresa, async (db) => {
     const tablaDocumentos = `${definicion.tabla}${empresa}`;
     const tablaClib = `${definicion.tablaClib}${empresa}`;
     const tablaPartidas = `${definicion.tablaPartidas}${empresa}`;
@@ -265,7 +272,7 @@ aplicacion.put('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
     throw new AplicacionError('Es necesario enviar un objeto "campos" con los valores a guardar.');
   }
 
-  await conConexion(async (db) => {
+  await conConexion(empresa, async (db) => {
     const tablaDocumentos = `${definicion.tabla}${empresa}`;
     const tablaClib = `${definicion.tablaClib}${empresa}`;
     const tablaPartidasClib = await obtenerTablaPartidasClib(db, definicion, empresa);
@@ -285,16 +292,22 @@ aplicacion.put('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
       const camposDisponiblesDocumento = await obtenerCamposDisponiblesEnTabla(db, tablaClib);
       if (camposDisponiblesDocumento.length) {
         const longitudesDocumento = await obtenerLongitudesCamposLibres(db, tablaClib, camposDisponiblesDocumento);
-        const camposNormalizados = normalizarCamposLibres(
+        const camposNormalizadosDocumento = normalizarCamposLibres(
           camposRecibidos,
           camposDisponiblesDocumento,
           longitudesDocumento
         );
-        await guardarCamposLibres(db, tablaClib, claveDocumento, camposNormalizados, camposDisponiblesDocumento);
+        await guardarCamposLibres(
+          db,
+          tablaClib,
+          claveDocumento,
+          camposNormalizadosDocumento,
+          camposDisponiblesDocumento
+        );
       }
     }
 
-    if (Array.isArray(partidasRecibidas) && partidasRecibidas.length) {
+    if (Array.isArray(partidasRecibidas) && partidasRecibidas.length > 0) {
       if (!tablaPartidasClib) {
         throw new AplicacionError('No existen campos libres configurados para las partidas en esta empresa.', 404);
       }
@@ -318,7 +331,16 @@ aplicacion.put('/api/documentos/:tipo/:empresa/:clave', asyncHandler(async (req,
 }));
 
 aplicacion.get('/api/estado', (req, res) => {
-  res.json({ ok: true, mensaje: 'Servidor en ejecución', baseDatos: CONFIGURACION_FIREBIRD.database });
+  const empresa = normalizarEmpresa(req.query.empresa);
+  const configuracion = obtenerConfiguracionFirebird(empresa);
+  res.json({
+    ok: true,
+    mensaje: 'Servidor en ejecución',
+    empresa,
+    host: configuracion.host,
+    puerto: configuracion.port,
+    baseDatos: configuracion.database
+  });
 });
 
 aplicacion.use('/api', (req, res) => {
@@ -369,7 +391,7 @@ function obtenerDefinicionTipo(tipo) {
 function normalizarEmpresa(valor) {
   const numero = Number.parseInt(valor, 10);
   if (Number.isNaN(numero) || numero < 1) {
-    return '01';
+    return EMPRESA_POR_DEFECTO;
   }
   return numero.toString().padStart(2, '0');
 }
@@ -399,9 +421,76 @@ function formatearFecha(valor) {
   return fecha.toISOString();
 }
 
-function conectarFirebird() {
+function obtenerConfiguracionFirebird(empresa) {
+  const empresaNormalizada = normalizarEmpresa(empresa);
+  const host = obtenerValorConfiguracionEmpresa('FIREBIRD_HOST', empresaNormalizada, '127.0.0.1');
+  const puerto = normalizarPuertoFirebird(
+    obtenerValorConfiguracionEmpresa('FIREBIRD_PORT', empresaNormalizada, '3050')
+  );
+  const baseDatos = obtenerValorConfiguracionEmpresa('FIREBIRD_DB_PATH', empresaNormalizada, '') || obtenerRutaBaseDatos(empresaNormalizada);
+  const usuario = obtenerValorConfiguracionEmpresa('FIREBIRD_USER', empresaNormalizada, 'SYSDBA');
+  const contrasena = obtenerValorConfiguracionEmpresa('FIREBIRD_PASSWORD', empresaNormalizada, 'masterkey');
+
+  return {
+    ...CONFIGURACION_FIREBIRD_BASE,
+    host,
+    port: puerto,
+    database: baseDatos,
+    user: usuario,
+    password: contrasena
+  };
+}
+
+function obtenerValorConfiguracionEmpresa(nombreVariable, empresa, valorPorDefecto = '') {
+  const empresaNormalizada = normalizarEmpresa(empresa);
+  const nombrePorEmpresa = `${nombreVariable}_${empresaNormalizada}`;
+  const valorEmpresa = process.env[nombrePorEmpresa];
+  if (esTextoNoVacio(valorEmpresa)) {
+    return valorEmpresa.toString().trim();
+  }
+  const valorGlobal = process.env[nombreVariable];
+  if (esTextoNoVacio(valorGlobal)) {
+    return valorGlobal.toString().trim();
+  }
+  return valorPorDefecto;
+}
+
+function esTextoNoVacio(valor) {
+  return valor !== undefined && valor !== null && valor.toString().trim() !== '';
+}
+
+function normalizarPuertoFirebird(valor) {
+  const numero = Number.parseInt(valor, 10);
+  if (Number.isNaN(numero) || numero <= 0) {
+    return 3050;
+  }
+  return numero;
+}
+
+function obtenerClaveCacheConexion(configuracion) {
+  if (!configuracion || typeof configuracion !== 'object') {
+    return 'SIN-CONFIGURACION';
+  }
+  return [configuracion.host, configuracion.port, configuracion.database, configuracion.user]
+    .map((valor) => (valor === undefined || valor === null ? '' : valor.toString().trim().toUpperCase()))
+    .join('|');
+}
+
+function obtenerClaveConexionActiva(db) {
+  if (db && esTextoNoVacio(db.__claveConexionCache)) {
+    return db.__claveConexionCache;
+  }
+  return 'SIN-CONEXION';
+}
+
+function obtenerClaveCacheTabla(db, nombreTabla) {
+  const tablaNormalizada = normalizarIdentificadorTabla(nombreTabla);
+  return `${obtenerClaveConexionActiva(db)}::${tablaNormalizada}`;
+}
+
+function conectarFirebird(configuracion) {
   return new Promise((resolve, reject) => {
-    firebird.attach(CONFIGURACION_FIREBIRD, (error, db) => {
+    firebird.attach(configuracion, (error, db) => {
       if (error) {
         reject(error);
       } else {
@@ -411,10 +500,23 @@ function conectarFirebird() {
   });
 }
 
-async function conConexion(trabajo) {
-  const db = await conectarFirebird();
+async function conConexion(empresa, trabajo) {
+  let empresaSolicitud = empresa;
+  let trabajoConexion = trabajo;
+  if (typeof empresa === 'function') {
+    trabajoConexion = empresa;
+    empresaSolicitud = EMPRESA_POR_DEFECTO;
+  }
+  if (typeof trabajoConexion !== 'function') {
+    throw new Error('Se requiere una función de trabajo para ejecutar la conexión.');
+  }
+
+  const empresaNormalizada = normalizarEmpresa(empresaSolicitud);
+  const configuracion = obtenerConfiguracionFirebird(empresaNormalizada);
+  const db = await conectarFirebird(configuracion);
+  db.__claveConexionCache = obtenerClaveCacheConexion(configuracion);
   try {
-    return await trabajo(db);
+    return await trabajoConexion(db);
   } finally {
     db.detach();
   }
@@ -433,13 +535,18 @@ function ejecutarConsulta(db, consulta, parametros = []) {
 }
 
 async function verificarTabla(db, nombreTabla) {
-  if (cacheTablas.has(nombreTabla)) {
-    return cacheTablas.get(nombreTabla);
+  const tabla = normalizarIdentificadorTabla(nombreTabla);
+  if (!tabla) {
+    return false;
+  }
+  const claveCache = obtenerClaveCacheTabla(db, tabla);
+  if (cacheTablas.has(claveCache)) {
+    return cacheTablas.get(claveCache);
   }
   const consulta = `SELECT FIRST 1 1 AS EXISTE FROM RDB$RELATIONS WHERE RDB$SYSTEM_FLAG = 0 AND TRIM(UPPER(RDB$RELATION_NAME)) = ?`;
-  const resultado = await ejecutarConsulta(db, consulta, [nombreTabla.trim().toUpperCase()]);
+  const resultado = await ejecutarConsulta(db, consulta, [tabla]);
   const existe = resultado.length > 0;
-  cacheTablas.set(nombreTabla, existe);
+  cacheTablas.set(claveCache, existe);
   return existe;
 }
 
@@ -448,8 +555,9 @@ async function obtenerCamposDisponiblesEnTabla(db, nombreTabla) {
   if (!tabla) {
     return [];
   }
-  if (cacheCamposTabla.has(tabla)) {
-    return cacheCamposTabla.get(tabla);
+  const claveCache = obtenerClaveCacheTabla(db, tabla);
+  if (cacheCamposTabla.has(claveCache)) {
+    return cacheCamposTabla.get(claveCache);
   }
   const consulta = `
     SELECT TRIM(UPPER(RDB$FIELD_NAME)) AS CAMPO
@@ -462,7 +570,7 @@ async function obtenerCamposDisponiblesEnTabla(db, nombreTabla) {
   const campos = registros
     .map((registro) => normalizarIdentificadorCampoLibre(registro.CAMPO))
     .filter(Boolean);
-  cacheCamposTabla.set(tabla, campos);
+  cacheCamposTabla.set(claveCache, campos);
   return campos;
 }
 
@@ -928,15 +1036,11 @@ function crearSetIdTablasPartidas() {
   return conjunto;
 }
 
-function obtenerRutaBaseDatos() {
-  const rutaEntorno = process.env.FIREBIRD_DB_PATH;
-  if (rutaEntorno && fs.existsSync(rutaEntorno)) {
-    return rutaEntorno;
-  }
-
+function obtenerRutaBaseDatos(empresa) {
+  const empresaNormalizada = normalizarEmpresa(empresa);
   const baseAspel = 'C:\\Program Files (x86)\\Common Files\\Aspel\\Sistemas Aspel';
   const versionPorDefecto = 'SAE9.00';
-  const segmentos = ['Empresa01', 'Datos', 'SAE90EMPRE01.FDB'];
+  const segmentos = [`Empresa${empresaNormalizada}`, 'Datos', `SAE90EMPRE${empresaNormalizada}.FDB`];
   const rutaPorDefecto = path.win32.join(baseAspel, versionPorDefecto, ...segmentos);
   const versiones = obtenerVersionesDisponibles(baseAspel)
     .filter((version) => compararVersiones(version, versionPorDefecto) >= 0)

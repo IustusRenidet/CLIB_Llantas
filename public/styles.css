@@ -102,41 +102,66 @@ body {
 }
 
 .app__header {
-  /* Línea inferior que separa el encabezado de los controles. */
-  border-bottom: 1px solid var(--color-borde);
-  /* Espacio inferior que evita que el contenido quede muy pegado. */
-  padding-bottom: 1.5rem;
+  border: 1px solid rgba(191, 219, 254, 0.45);
+  background: linear-gradient(135deg, #1d4ed8 0%, #2563eb 50%, #1e40af 100%);
+  border-radius: 1.1rem;
+  padding: clamp(1.3rem, 2vw, 2rem);
+  box-shadow: 0 14px 35px rgba(29, 78, 216, 0.32);
+  position: relative;
+  overflow: hidden;
+}
+
+.app__header::before {
+  content: '';
+  position: absolute;
+  right: -70px;
+  top: -70px;
+  width: 240px;
+  height: 240px;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 255, 255, 0.3) 0%, rgba(255, 255, 255, 0) 72%);
+  pointer-events: none;
 }
 
 .app__badge {
-  /* Color azul que mantiene la identidad visual del producto. */
-  color: var(--color-azul);
-  /* Tamaño pequeño pensado para etiquetas superiores. */
-  font-size: 0.75rem;
-  /* Grosor medio para destacar el texto. */
-  font-weight: 600;
-  /* Espaciado entre letras que mejora la lectura de textos en mayúsculas. */
-  letter-spacing: 0.28em;
+  color: #eff6ff;
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.24em;
+  text-transform: uppercase;
+  margin: 0;
 }
 
 .app__title {
-  /* Escala fluida que ajusta el tamaño del título según el viewport. */
-  font-size: clamp(1.5rem, 2vw + 0.9rem, 2.2rem);
-  /* Peso fuerte para jerarquizar el encabezado. */
+  font-size: clamp(2rem, 2.7vw + 1rem, 3.1rem);
   font-weight: 700;
-  /* Utiliza el color de texto principal para mantener contraste. */
-  color: var(--color-texto);
-  /* Margen inferior que separa el título del contenido siguiente. */
-  margin-bottom: 0.75rem;
+  color: #ffffff;
+  margin: 0.35rem 0 0.65rem;
+  line-height: 1.12;
+  text-shadow: 0 2px 12px rgba(15, 23, 42, 0.22);
 }
 
 .app__subtitle {
-  /* Texto secundario más tenue para descripciones. */
-  color: var(--color-texto-suave);
-  /* Limitamos el ancho para que sea cómodo de leer. */
-  max-width: 600px;
-  /* Centramos el subtítulo tanto en pantallas pequeñas como grandes. */
-  margin: 0 auto;
+  color: #dbeafe;
+  margin: 0;
+  max-width: none;
+  font-size: 1.02rem;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+}
+
+.app--tema-llantas .app__header {
+  border: 1px solid rgba(253, 186, 116, 0.5);
+  background: linear-gradient(135deg, #ea580c 0%, #f97316 50%, #c2410c 100%);
+  box-shadow: 0 14px 35px rgba(234, 88, 12, 0.32);
+}
+
+.app--tema-llantas .app__badge {
+  color: #fff7ed;
+}
+
+.app--tema-llantas .app__subtitle {
+  color: #ffedd5;
 }
 
 .small-label {

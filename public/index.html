@@ -11,11 +11,18 @@
     <main class="app" id="app">
       <header class="app__header">
         <p class="app__badge">Iconet</p>
-        <h1 class="app__title">Campos libres en Ventas</h1>
+        <h2 class="app__title" id="empresa-activa-encabezado">
+          Llantas y Multiservicios
+        </h2>
+        <p class="app__subtitle">Campos libres en Ventas</p>
       </header>
 
       <section class="app__content">
-        <div class="tabs" role="tablist" aria-label="Secciones de la aplicación">
+        <div
+          class="tabs"
+          role="tablist"
+          aria-label="Secciones de la aplicación"
+        >
           <button
             type="button"
             class="tabs__tab tabs__tab--activo"
@@ -44,43 +51,69 @@
 
         <div class="tab-panel" id="panel-busqueda" data-tab-panel="busqueda">
           <div class="panel panel--busqueda">
-          <div>
-            <p class="small-label">Búsqueda</p>
-            <h2 class="panel__title">Filtrar documentos</h2>
-          </div>
+            <div>
+              <p class="small-label">Búsqueda</p>
+              <h2 class="panel__title">Filtrar documentos</h2>
+            </div>
 
-          <form id="formulario-busqueda" class="formulario-busqueda">
-            <label class="campo-formulario">
-              <span>Tipo de documento</span>
-              <select id="tipo-documento" class="control-busqueda" required></select>
-            </label>
+            <form id="formulario-busqueda" class="formulario-busqueda">
+              <label class="campo-formulario">
+                <span>Empresa</span>
+                <select id="empresa" class="control-busqueda" required></select>
+              </label>
 
-            <label class="campo-formulario campo-formulario--texto">
-              <span>Buscar por clave o cliente</span>
-              <input id="termino" class="control-busqueda" type="text" placeholder="" autocomplete="off" />
-            </label>
-          </form>
+              <label class="campo-formulario">
+                <span>Tipo de documento</span>
+                <select
+                  id="tipo-documento"
+                  class="control-busqueda"
+                  required
+                ></select>
+              </label>
 
-          <div class="tabla-documentos">
-            <table>
-              <thead>
-                <tr>
-                  <th>Documento</th>
-                  <th>Cliente</th>
-                  <th>Fecha</th>
-                  <th></th>
-                </tr>
-              </thead>
-              <tbody id="resultados"></tbody>
-            </table>
-            <p id="sin-resultados" class="mensaje-vacio" hidden>No se encontraron documentos con ese criterio.</p>
-          </div>
+              <label class="campo-formulario campo-formulario--texto">
+                <span>Buscar por clave o cliente</span>
+                <input
+                  id="termino"
+                  class="control-busqueda"
+                  type="text"
+                  placeholder=""
+                  autocomplete="off"
+                />
+              </label>
+            </form>
+
+            <div class="tabla-documentos">
+              <table>
+                <thead>
+                  <tr>
+                    <th>Documento</th>
+                    <th>Cliente</th>
+                    <th>Fecha</th>
+                    <th></th>
+                  </tr>
+                </thead>
+                <tbody id="resultados"></tbody>
+              </table>
+              <p id="sin-resultados" class="mensaje-vacio" hidden>
+                No se encontraron documentos con ese criterio.
+              </p>
+            </div>
           </div>
         </div>
 
-        <div class="tab-panel" id="panel-detalle-tab" data-tab-panel="detalle" hidden>
+        <div
+          class="tab-panel"
+          id="panel-detalle-tab"
+          data-tab-panel="detalle"
+          hidden
+        >
           <div class="panel panel--detalle" id="panel-detalle">
-            <button type="button" id="boton-volver" class="panel-detalle__volver">
+            <button
+              type="button"
+              id="boton-volver"
+              class="panel-detalle__volver"
+            >
               ← Volver a la búsqueda
             </button>
             <div>
@@ -107,7 +140,9 @@
               <div>
                 <p class="small-label">Campos libres del documento</p>
                 <div class="campos-libres" id="contenedor-campos"></div>
-                <p id="sin-campos-documento" class="mensaje-vacio" hidden>No hay campos libres configurados para este documento.</p>
+                <p id="sin-campos-documento" class="mensaje-vacio" hidden>
+                  No hay campos libres configurados para este documento.
+                </p>
               </div>
 
               <div class="panel-partidas col-12">
@@ -125,18 +160,31 @@
                     </thead>
                     <tbody id="partidas"></tbody>
                   </table>
-                  <p id="sin-partidas" class="mensaje-vacio" hidden>El documento no tiene partidas registradas.</p>
+                  <p id="sin-partidas" class="mensaje-vacio" hidden>
+                    El documento no tiene partidas registradas.
+                  </p>
                 </div>
                 <div class="campos-partidas col-12" id="campos-partidas" hidden>
                   <p class="small-label">Campos libres de partidas</p>
-                  <div id="lista-campos-partidas" class="campos-partidas__lista"></div>
-                  <p id="sin-campos-partidas" class="mensaje-vacio" hidden>No hay campos libres configurados para las partidas.</p>
+                  <div
+                    id="lista-campos-partidas"
+                    class="campos-partidas__lista"
+                  ></div>
+                  <p id="sin-campos-partidas" class="mensaje-vacio" hidden>
+                    No hay campos libres configurados para las partidas.
+                  </p>
                 </div>
               </div>
 
               <div class="acciones-formulario">
-                <button type="submit" class="boton-primario">Guardar cambios</button>
-                <span id="estado-guardado" class="estado-guardado" role="status"></span>
+                <button type="submit" class="boton-primario">
+                  Guardar cambios
+                </button>
+                <span
+                  id="estado-guardado"
+                  class="estado-guardado"
+                  role="status"
+                ></span>
               </div>
             </form>
           </div>
@@ -164,7 +212,12 @@
       </tr>
     </template>
 
-    <div id="toast-container" class="toast-container" aria-live="assertive" aria-atomic="true"></div>
+    <div
+      id="toast-container"
+      class="toast-container"
+      aria-live="assertive"
+      aria-atomic="true"
+    ></div>
 
     <div
       id="modal-confirmacion"
@@ -181,10 +234,18 @@
           Tienes cambios sin guardar. Si continúas, no se aplicarán.
         </p>
         <div class="modal__acciones">
-          <button type="button" class="boton-secundario modal__boton" data-modal-cancelar>
+          <button
+            type="button"
+            class="boton-secundario modal__boton"
+            data-modal-cancelar
+          >
             Cancelar
           </button>
-          <button type="button" class="boton-primario modal__boton" data-modal-aceptar>
+          <button
+            type="button"
+            class="boton-primario modal__boton"
+            data-modal-aceptar
+          >
             Aceptar
           </button>
         </div>

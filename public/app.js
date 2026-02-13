@@ -2,6 +2,8 @@ const elementos = {
   app: document.getElementById('app'),
   formularioBusqueda: document.getElementById('formulario-busqueda'),
   formularioCampos: document.getElementById('formulario-campos'),
+  empresa: document.getElementById('empresa'),
+  empresaActivaEncabezado: document.getElementById('empresa-activa-encabezado'),
   tipoDocumento: document.getElementById('tipo-documento'),
   termino: document.getElementById('termino'),
   tablaResultados: document.getElementById('resultados'),
@@ -19,6 +21,7 @@ const elementos = {
   camposPartidas: document.getElementById('campos-partidas'),
   listaCamposPartidas: document.getElementById('lista-campos-partidas'),
   mensajeCamposPartidas: document.getElementById('sin-campos-partidas'),
+  botonGuardar: document.querySelector('#formulario-campos button[type="submit"]'),
   panelDetalle: document.getElementById('panel-detalle'),
   tabDetalle: document.querySelector('[data-tab-target="detalle"]'),
   botonVolver: document.getElementById('boton-volver'),
@@ -30,7 +33,11 @@ const elementos = {
 };
 
 const REGEX_CAMPO_LIBRE = /^CAMPLIB\d+$/i;
-const EMPRESA_FIJA = '1';
+const EMPRESA_POR_DEFECTO = '01';
+const EMPRESAS_PREDETERMINADAS = [
+  { clave: '01', nombre: 'Llantas y Multiservicios' },
+  { clave: '02', nombre: 'CAFCAM' }
+];
 const MENSAJE_CAMBIOS_PENDIENTES = 'Tienes cambios sin guardar. Si continúas, no se aplicarán.';
 
 const plantillas = {
@@ -51,6 +58,8 @@ let resolverModalConfirmacion = null;
 let ultimoElementoEnfoque = null;
 let temporizadorOcultarModal = null;
 let promesaModalActiva = null;
+let guardadoEnCurso = false;
+const TEXTO_BOTON_GUARDAR = elementos.botonGuardar ? elementos.botonGuardar.textContent : 'Guardar cambios';
 
 async function cargarTiposDocumento() {
   const respuesta = await fetch('/api/tipos-documento');
@@ -66,6 +75,98 @@ async function cargarTiposDocumento() {
     opcion.textContent = `${tipo.clave} · ${tipo.descripcion}`;
     elementos.tipoDocumento.appendChild(opcion);
   });
+}
+
+async function cargarEmpresas() {
+  if (!elementos.empresa) {
+    return;
+  }
+  try {
+    const respuesta = await fetch('/api/empresas');
+    const datos = await respuesta.json();
+    if (!datos.ok) {
+      throw new Error(datos.mensaje || 'No fue posible cargar las empresas.');
+    }
+    poblarEmpresas(datos.empresas, datos.empresaPorDefecto);
+  } catch (error) {
+    poblarEmpresas(EMPRESAS_PREDETERMINADAS, EMPRESA_POR_DEFECTO);
+  }
+}
+
+function poblarEmpresas(empresas = [], empresaPorDefecto = EMPRESA_POR_DEFECTO) {
+  if (!elementos.empresa) {
+    return;
+  }
+  const empresasNormalizadas = normalizarListaEmpresas(empresas);
+  const fuente = empresasNormalizadas.length ? empresasNormalizadas : EMPRESAS_PREDETERMINADAS;
+  const claveDefecto = normalizarClaveEmpresa(empresaPorDefecto) || fuente[0].clave;
+
+  elementos.empresa.innerHTML = '';
+  fuente.forEach((empresa) => {
+    const opcion = document.createElement('option');
+    opcion.value = empresa.clave;
+    opcion.textContent = empresa.nombre;
+    elementos.empresa.appendChild(opcion);
+  });
+  elementos.empresa.value = fuente.some((empresa) => empresa.clave === claveDefecto) ? claveDefecto : fuente[0].clave;
+  actualizarEmpresaActivaEncabezado();
+}
+
+function normalizarListaEmpresas(lista = []) {
+  if (!Array.isArray(lista)) {
+    return [];
+  }
+  const empresas = [];
+  const claves = new Set();
+  lista.forEach((empresa) => {
+    const clave = normalizarClaveEmpresa(empresa && empresa.clave);
+    if (!clave || claves.has(clave)) {
+      return;
+    }
+    const nombre =
+      empresa && empresa.nombre ? empresa.nombre.toString().trim() : `Empresa ${Number.parseInt(clave, 10) || 0}`;
+    empresas.push({ clave, nombre: nombre || `Empresa ${Number.parseInt(clave, 10) || 0}` });
+    claves.add(clave);
+  });
+  return empresas;
+}
+
+function normalizarClaveEmpresa(valor) {
+  const numero = Number.parseInt(valor, 10);
+  if (Number.isNaN(numero) || numero < 1) {
+    return '';
+  }
+  return numero.toString().padStart(2, '0');
+}
+
+function obtenerEmpresaSeleccionada() {
+  if (!elementos.empresa) {
+    return EMPRESA_POR_DEFECTO;
+  }
+  return normalizarClaveEmpresa(elementos.empresa.value) || EMPRESA_POR_DEFECTO;
+}
+
+function obtenerNombreEmpresaSeleccionada() {
+  if (!elementos.empresa) {
+    return '';
+  }
+  const opcion = elementos.empresa.options[elementos.empresa.selectedIndex];
+  if (!opcion) {
+    return '';
+  }
+  return opcion.textContent ? opcion.textContent.toString().trim() : '';
+}
+
+function actualizarEmpresaActivaEncabezado() {
+  if (!elementos.empresaActivaEncabezado) {
+    return;
+  }
+  const claveEmpresa = obtenerEmpresaSeleccionada();
+  if (elementos.app) {
+    elementos.app.classList.toggle('app--tema-llantas', claveEmpresa === '01');
+  }
+  const nombre = obtenerNombreEmpresaSeleccionada() || 'Empresa no definida';
+  elementos.empresaActivaEncabezado.textContent = `${nombre}`;
 }
 
 async function buscarDocumentos() {
@@ -89,7 +190,7 @@ async function buscarDocumentos() {
 
   const parametros = new URLSearchParams({
     tipo,
-    empresa: EMPRESA_FIJA,
+    empresa: obtenerEmpresaSeleccionada(),
     termino: elementos.termino ? elementos.termino.value : ''
   });
 
@@ -146,7 +247,8 @@ async function seleccionarDocumento(registro) {
 
 async function cargarDocumento(registro) {
   try {
-    const url = `/api/documentos/${registro.tipo}/${registro.empresa}/${encodeURIComponent(registro.cveDoc)}`;
+    const empresaDocumento = normalizarClaveEmpresa(registro.empresa) || obtenerEmpresaSeleccionada();
+    const url = `/api/documentos/${registro.tipo}/${empresaDocumento}/${encodeURIComponent(registro.cveDoc)}`;
     const respuesta = await fetch(url);
     const datos = await respuesta.json();
 
@@ -156,7 +258,7 @@ async function cargarDocumento(registro) {
 
     documentoSeleccionado = {
       tipo: registro.tipo,
-      empresa: registro.empresa,
+      empresa: empresaDocumento,
       cveDoc: registro.cveDoc
     };
 
@@ -594,6 +696,10 @@ async function guardarCampos(evento) {
   if (!documentoSeleccionado) {
     return;
   }
+  if (guardadoEnCurso) {
+    return;
+  }
+  establecerGuardadoEnCurso(true);
 
   const campos = {};
   elementos.contenedorCampos.querySelectorAll('[data-clave-campo]').forEach((input) => {
@@ -609,13 +715,13 @@ async function guardarCampos(evento) {
       if (Number.isNaN(numero)) {
         return;
       }
-      
+
       const camposPartida = {};
       // Busca inputs dentro de este contenedor específico
       contenedor.querySelectorAll('input[data-clave-campo]').forEach((input) => {
         camposPartida[input.dataset.claveCampo] = input.value.trim();
       });
-      
+
       partidas.push({ numero, campos: camposPartida });
     });
   }
@@ -648,6 +754,8 @@ async function guardarCampos(evento) {
     }, 2500);
   } catch (error) {
     mostrarMensaje(error.message);
+  } finally {
+    establecerGuardadoEnCurso(false);
   }
 }
 
@@ -845,8 +953,19 @@ function actualizarEstadoGuardado(texto, esError = false) {
   }
 }
 
+function establecerGuardadoEnCurso(activo) {
+  guardadoEnCurso = Boolean(activo);
+  if (!elementos.botonGuardar) {
+    return;
+  }
+  elementos.botonGuardar.disabled = guardadoEnCurso;
+  elementos.botonGuardar.setAttribute('aria-disabled', guardadoEnCurso ? 'true' : 'false');
+  elementos.botonGuardar.textContent = guardadoEnCurso ? 'Guardando...' : TEXTO_BOTON_GUARDAR;
+}
+
 window.addEventListener('DOMContentLoaded', async () => {
   try {
+    await cargarEmpresas();
     await cargarTiposDocumento();
     await buscarDocumentos();
   } catch (error) {
@@ -867,6 +986,13 @@ if (elementos.termino) {
 
 if (elementos.tipoDocumento) {
   elementos.tipoDocumento.addEventListener('change', () => {
+    buscarDocumentos();
+  });
+}
+
+if (elementos.empresa) {
+  elementos.empresa.addEventListener('change', () => {
+    actualizarEmpresaActivaEncabezado();
     buscarDocumentos();
   });
 }

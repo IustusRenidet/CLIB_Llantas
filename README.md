@@ -1,7 +1,7 @@
 # CLIB_Llantas
 
 Aplicación web y de escritorio pensada para editar los campos libres de los documentos del módulo de ventas de Aspel SAE.
-Funciona como una SPA servida desde `localhost:3001` para que pueda empaquetarse con Electron y distribuirse usando ASAR.
+Funciona como una SPA servida por Express y empaquetada con Electron para distribuirse usando ASAR.
 
 ## Características
 
@@ -42,7 +42,42 @@ Esto levanta el backend en `http://localhost:3001`. Desde ahí se puede abrir el
 npm start
 ```
 
-Electron levanta el mismo servidor web en el puerto 3001 y carga la interfaz en una ventana nativa.
+Electron levanta el mismo servidor web en un puerto local disponible y carga la interfaz en una ventana nativa.
+
+## Releases (versionado)
+
+Los scripts de release crean commit y tag (`vX.Y.Z`) usando `npm version`.
+
+```bash
+npm run release:patch
+npm run release:minor
+npm run release:major
+```
+
+Después de versionar, sube branch + tags:
+
+```bash
+npm run release:push
+```
+
+## Publish (artefactos)
+
+Generar instaladores en local (carpeta `dist/`):
+
+```bash
+npm run publish:local
+```
+
+Publicar en GitHub Releases con `electron-builder`:
+
+```bash
+$env:GH_TOKEN="tu_token_de_github"
+npm run publish:github
+```
+
+Notas:
+- El token necesita permisos para crear/editar releases del repo.
+- Conviene publicar después de tener el tag ya empujado (`npm run release:push`).
 
 ## API disponible
 
