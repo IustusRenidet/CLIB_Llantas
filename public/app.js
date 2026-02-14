@@ -35,8 +35,7 @@ const elementos = {
 const REGEX_CAMPO_LIBRE = /^CAMPLIB\d+$/i;
 const EMPRESA_POR_DEFECTO = '01';
 const EMPRESAS_PREDETERMINADAS = [
-  { clave: '01', nombre: 'Llantas y Multiservicios' },
-  { clave: '02', nombre: 'CAFCAM' }
+  { clave: EMPRESA_POR_DEFECTO, nombre: 'Llantas y Multiservicios' }
 ];
 const MENSAJE_CAMBIOS_PENDIENTES = 'Tienes cambios sin guardar. Si continúas, no se aplicarán.';
 
@@ -98,7 +97,8 @@ function poblarEmpresas(empresas = [], empresaPorDefecto = EMPRESA_POR_DEFECTO) 
     return;
   }
   const empresasNormalizadas = normalizarListaEmpresas(empresas);
-  const fuente = empresasNormalizadas.length ? empresasNormalizadas : EMPRESAS_PREDETERMINADAS;
+  const fuenteFiltrada = empresasNormalizadas.filter((empresa) => empresa.clave === EMPRESA_POR_DEFECTO);
+  const fuente = fuenteFiltrada.length ? fuenteFiltrada : EMPRESAS_PREDETERMINADAS;
   const claveDefecto = normalizarClaveEmpresa(empresaPorDefecto) || fuente[0].clave;
 
   elementos.empresa.innerHTML = '';
@@ -109,6 +109,7 @@ function poblarEmpresas(empresas = [], empresaPorDefecto = EMPRESA_POR_DEFECTO) 
     elementos.empresa.appendChild(opcion);
   });
   elementos.empresa.value = fuente.some((empresa) => empresa.clave === claveDefecto) ? claveDefecto : fuente[0].clave;
+  elementos.empresa.disabled = true;
   actualizarEmpresaActivaEncabezado();
 }
 
@@ -140,10 +141,7 @@ function normalizarClaveEmpresa(valor) {
 }
 
 function obtenerEmpresaSeleccionada() {
-  if (!elementos.empresa) {
-    return EMPRESA_POR_DEFECTO;
-  }
-  return normalizarClaveEmpresa(elementos.empresa.value) || EMPRESA_POR_DEFECTO;
+  return EMPRESA_POR_DEFECTO;
 }
 
 function obtenerNombreEmpresaSeleccionada() {

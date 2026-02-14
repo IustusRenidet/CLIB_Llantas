@@ -11,7 +11,7 @@ async function crearVentana() {
     height: 800,
     minWidth: 1024,
     minHeight: 640,
-    title: 'CLIB Ventas',
+    title: 'CLIB_LLANTAS',
     webPreferences: {
       contextIsolation: true,
       nodeIntegration: false,
@@ -28,7 +28,7 @@ app.whenReady().then(async () => {
   } catch (error) {
     console.error('No fue posible iniciar la aplicación:', error);
     dialog.showErrorBox(
-      'CLIB Ventas',
+      'CLIB_LLANTAS',
       `${error?.message || error}\n\nLa instalación podría estar incompleta o el puerto está en uso. Intenta reinstalar o contacta a soporte.`
     );
     app.quit();

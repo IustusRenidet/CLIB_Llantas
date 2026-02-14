@@ -42,7 +42,7 @@
       }
     ],
     "appId": "com.iconet.clib_llantas",
-    "productName": "CLIB Ventas",
+    "productName": "CLIB_LLANTAS",
     "directories": {
       "output": "dist"
     },
