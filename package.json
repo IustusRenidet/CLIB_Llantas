@@ -39,7 +39,8 @@
       {
         "provider": "github",
         "owner": "IustusRenidet",
-        "repo": "CLIB_Llantas"
+        "repo": "CLIB_Llantas",
+        "releaseType": "release"
       }
     ],
     "appId": "com.iconet.clib_llantas",
